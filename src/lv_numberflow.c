@@ -258,7 +258,7 @@ static uint16_t draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx
 static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_t x)
 {
     _lv_nf_slide_dsc_t* slide_dsc = &digit->slide_dsc;
-    lv_numberflow_t *numberflow = digit->anim.numberflow;
+    lv_numberflow_t *numberflow = (lv_numberflow_t *)digit->anim.numberflow;
     lv_obj_t *obj = (lv_obj_t *)numberflow;
 
     int32_t value = digit->anim.anim_state;
@@ -402,7 +402,7 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
 static uint16_t lv_nf_get_number_width(lv_numberflow_t *numberflow, uint8_t number)
 {
     // TODO: implement number width buffer.
-    lv_font_t *font = lv_obj_get_style_text_font(numberflow, LV_PART_MAIN);
+    const lv_font_t *font = lv_obj_get_style_text_font((lv_obj_t *)numberflow, LV_PART_MAIN);
     return lv_font_get_glyph_width(font, number + '0', '\0');
 }
 
@@ -429,7 +429,7 @@ static void lv_nf_digit_anim_start(lv_anim_t * a)
     _lv_nf_digit_t * digit = a->var;
     _lv_nf_slide_dsc_t* slide_dsc = &digit->slide_dsc;
     _lv_nf_slide_start_dsc_t* slide_start_dsc = &digit->slide_start_dsc;
-    lv_numberflow_t *numberflow = digit->anim.numberflow;
+    lv_numberflow_t *numberflow = (lv_numberflow_t *)digit->anim.numberflow;
 
     lv_coord_t line_height = numberflow->number_height;
     lv_coord_t total_height = line_height * digit->modulus;
@@ -470,7 +470,7 @@ static void lv_nf_digit_anim_start(lv_anim_t * a)
     // 更新目标宽度
     digit->slide_dsc.start_width = digit->slide_dsc.curr_width;
     digit->slide_dsc.end_width = lv_nf_get_number_width(
-                                        digit->anim.numberflow,
+                                        (lv_numberflow_t *)digit->anim.numberflow,
                                         digit->slide_dsc.last_num);
 
     lv_obj_invalidate(digit->anim.numberflow);
@@ -501,7 +501,7 @@ int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t dire
                          int32_t target_opa, lv_anim_path_cb_t path, uint32_t time)
 {
     _lv_nf_slide_dsc_t* slide_dsc = &digit->slide_dsc;
-    lv_numberflow_t *numberflow = digit->anim.numberflow;
+    lv_numberflow_t *numberflow = (lv_numberflow_t *)digit->anim.numberflow;
 
     lv_coord_t height = numberflow->number_height;
     int32_t round_height = height * digit->modulus;
@@ -528,8 +528,8 @@ int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t dire
     if (time == 0) {
         lv_anim_del(digit, lv_nf_digit_anim);
         digit->anim.anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
-        lv_obj_invalidate((lv_numberflow_t *)numberflow);
-        lv_obj_refresh_self_size((lv_numberflow_t *)numberflow);
+        lv_obj_invalidate((lv_obj_t *)numberflow);
+        lv_obj_refresh_self_size((lv_obj_t *)numberflow);
 
         digit->slide_dsc.end_px = digit->slide_dsc.end_px + delta_px;
         digit->slide_dsc.start_px = digit->slide_dsc.end_px;
@@ -578,7 +578,7 @@ static void lv_nf_init_digit(lv_numberflow_t *numberflow, _lv_nf_digit_t *digit)
 {
     lv_memset_00(digit, sizeof(_lv_nf_digit_t));
     digit->modulus = 10;
-    digit->anim.numberflow = numberflow;
+    digit->anim.numberflow = (lv_obj_t *)numberflow;
     digit->slide_dsc.curr_width = lv_nf_get_number_width(numberflow, 0);
     digit->slide_dsc.start_width = digit->slide_dsc.curr_width;
 }
