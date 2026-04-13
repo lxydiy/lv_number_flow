@@ -31,57 +31,51 @@ extern "C" {
  **********************/
 
 typedef struct {
-    int32_t left;               /**< X offset from baseline-left to top-left*/
-    int32_t top;                /**< Y offset from baseline-left to top-left*/
-    int32_t width;              /**< Glyph image width*/
-    int32_t height;             /**< Glyph image height*/
-    int32_t start;              /**< Start offset of glyph blob*/
-    int32_t size;               /**< Size of glyph (in bytes)*/
+    int16_t ofs_x;              /**< X offset from origin to image top-left*/
+    int16_t ofs_y;              /**< Y offset from origin to image top-left*/
+    uint16_t box_w;             /**< image width*/
+    uint16_t box_h;             /**< image height*/
+    uint32_t start;             /**< Start offset of glyph blob*/
 } lv_nf_glyph_blur_dsc_t;
 
-typedef struct {
-    const char* ch;             /**< This character*/
-    int32_t width;              /**< Width of this character without blur*/
-    const lv_nf_glyph_blur_dsc_t* blurs;    /**< Blurs of this character*/
-} lv_nf_glyph_dsc_t;
 
 typedef struct {
-    const lv_nf_glyph_dsc_t* glyph_dsc;
-    int32_t glyph_count;
+    const lv_nf_glyph_blur_dsc_t* blurs;    /**< Blurs of this character*/
+    int16_t x_adv[10];                      /**< Draw next character after this distance*/
     const uint8_t* glyph_blob;
-    int32_t max_blur_level;
+    uint8_t blur_level;
     uint16_t line_height;
 } lv_numberflow_blur_data_t;
 
 typedef struct {
-    int32_t last_num;       // 当前动画目标number
-    lv_coord_t start_px;    // 动画开始时的循环坐标，为0时，表示数字0在正中。
-                            // 范围：整个int范围
-    lv_coord_t last_px[2];  // 前两帧循环坐标，动态更新，范围同start_px
-    lv_coord_t end_px;      // 动画滚动结束时的距离，实现composite: accumulate
-
-    lv_opa_t start_opacity; // 动画开始时的不透明度
-    lv_opa_t last_opacity;  // 上一帧的不透明度，动态更新
-    lv_opa_t end_opacity;   // 动画结束时的不透明度
-
-    uint16_t start_width;   // 动画开始时的宽度
-    uint16_t curr_width;    // 动画当前宽度
-    uint16_t end_width;     // 动画到达last_num时的宽度
-} _lv_nf_slide_dsc_t;
-
-typedef struct {
-    lv_coord_t delta_px;        /**< Pixels to move this digit's Y down*/
-    int32_t target_num;         /**< New number of this digit*/
-    lv_opa_t target_opa;        /**< New opacity of this digit*/
-} _lv_nf_slide_start_dsc_t;
-
-typedef struct {
-    int32_t anim_state;         /**< Animation value passing to draw function*/
+    int16_t anim_state;         /**< Animation value passing to draw function*/
     lv_obj_t *numberflow;
 } _lv_nf_anim_state_t;
 
 typedef struct {
-    int32_t modulus;                            /**< Modulus number of this digit*/
+    int32_t begin;
+    int32_t curr;
+    int32_t end;
+} _lv_nf_anim_dsc_t;
+
+typedef struct {
+    int8_t last_num;       // 当前动画目标number
+
+    lv_coord_t last_flow;   // 前一帧循环坐标，动态更新，范围同start_px
+
+    _lv_nf_anim_dsc_t flow;
+    _lv_nf_anim_dsc_t opa;
+    _lv_nf_anim_dsc_t width;
+} _lv_nf_slide_dsc_t;
+
+typedef struct {
+    lv_coord_t ofs_y;        /**< Pixels to move this digit's Y down*/
+    int8_t target_num;         /**< New number of this digit*/
+    lv_opa_t target_opa;        /**< New opacity of this digit*/
+} _lv_nf_slide_start_dsc_t;
+
+typedef struct {
+    uint8_t modulus;                            /**< Modulus number of this digit*/
     _lv_nf_slide_dsc_t slide_dsc;               /**< Digit count of numbers*/
     _lv_nf_slide_start_dsc_t slide_start_dsc;   /**< New slide description to update*/
     _lv_nf_anim_state_t anim;
@@ -94,19 +88,16 @@ typedef struct {
     const lv_numberflow_blur_data_t *blur_data;
 
     int32_t value;              /**< Last value set by lv_numberflow_set_value*/
-    int32_t digit_count;        /**< Total digit count allocated*/
-    int32_t visible_digit_cnt_prev;   /**< Visible digits after last number change*/
+    uint8_t digit_count;        /**< Total digit count allocated*/
+    uint8_t visible_digit_cnt_prev;   /**< Visible digits after last number change*/
     _lv_nf_digit_t *digits;     /**< Array of digits descriptions, [0] is the one's place*/
     _lv_nf_digit_t *digits_ptr_static[LV_NUMBERFLOW_MAX_DIGITS];
 
-    int32_t start_content_width;
-    int32_t target_content_width;
-    int32_t current_content_width;
-    
-    int32_t start_x_offset;
-    int32_t target_x_offset;
-    int32_t current_x_offset;
-    int32_t anim_state;         /**< Size animation state*/
+    _lv_nf_anim_dsc_t x_ofs;
+    _lv_nf_anim_dsc_t width;
+
+    int16_t anim_state;         /**< Size animation state*/
+
     lv_coord_t height;          /**< Line height of font*/
     lv_coord_t line_space;
     lv_coord_t letter_space;

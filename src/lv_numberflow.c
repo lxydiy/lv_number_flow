@@ -64,6 +64,9 @@ const lv_obj_class_t lv_numberflow_class = {
     .base_class = &lv_obj_class
 };
 
+/** To be more consistent with the original animation of NumberFlow, a custom
+ *  animation curve is used. This animation curve below is mapped from:
+ *  https://github.com/barvian/number-flow/blob/7ab1a7164ef1b088267f789b07581fefef064b68/packages/number-flow/src/lite.ts#L73 */
 static const uint16_t number_flow_ease_lut[90] = {
     0,     5,    19,    40,    68,    98,   132,   169,   207,   246,   285,   324,   362,   399,   436,   472,
   506,   539,   570,   600,   629,   655,   681,   706,   728,   749,   769,   787,   805,   821,   837,   851,
@@ -77,10 +80,26 @@ static const uint16_t number_flow_ease_lut[90] = {
  *      MACROS
  **********************/
 
-#define ANIMATION_LERP(state, minval, maxval) \
+/** Calculate current animation value*/
+#define ANIM_LERP(state, dsc) \
     ( LV_NUMBERFLOW_ANIM_STATE_INV != (state) ? \
-    ((minval) + ((((maxval) - (minval)) * (state)) >> LV_NUMBERFLOW_ANIM_STATE_NORM)) \
-    : (maxval))
+    ((dsc.begin) + ((((dsc.end) - (dsc.begin)) * (state)) >> LV_NUMBERFLOW_ANIM_STATE_NORM)) \
+    : (dsc.end))
+
+/** Update end, but keep current value as begin to implement continuous animation*/
+#define ANIM_UPDATE(dsc, target) \
+    do { \
+        dsc.begin = dsc.curr; \
+        dsc.end = target; \
+    } while(0)
+
+/** Update target without animation*/
+#define ANIM_UPDATE_STOP(dsc, target) \
+    do { \
+        dsc.begin = target; \
+        dsc.curr = target; \
+        dsc.end = target; \
+    } while(0)
 
 #define MAP(r, rmin, rmax, tmin, tmax) \
     ((tmin) + ((r) - (rmin)) * ((tmax) - (tmin)) / ((rmax) - (rmin)))
@@ -182,6 +201,7 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     numberflow->letter_space = lv_obj_get_style_text_letter_space(obj, 0);
 
     numberflow->value = -1;
+
     numberflow->digit_count = 0;
     numberflow->digits = NULL;
     lv_memset_00(numberflow->digits_ptr_static, sizeof(numberflow->digits_ptr_static));
@@ -190,13 +210,13 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
 
     numberflow->visible_digit_cnt_prev = 0;
 
-    numberflow->start_content_width = 0;
-    numberflow->target_content_width = 0;
-    numberflow->current_content_width = 0;
+    numberflow->width.begin = 0;
+    numberflow->width.curr = 0;
+    numberflow->width.end = 0;
 
-    numberflow->start_x_offset = 0;
-    numberflow->target_x_offset = 0;
-    numberflow->current_x_offset = 0;
+    numberflow->x_ofs.begin = 0;
+    numberflow->x_ofs.curr = 0;
+    numberflow->x_ofs.end = 0;
 
     numberflow->anim_state = 0;
 
@@ -223,6 +243,7 @@ static void lv_numberflow_destructor(const lv_obj_class_t * class_p, lv_obj_t * 
     }
 }
 
+/*Simple integer linear interpolator for animation curve*/
 static int32_t lv_numberflow_ease_curve(const lv_anim_t * anim)
 {
     /*Calculate the current step*/
@@ -297,7 +318,7 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
 
     lv_coord_t height = numberflow->number_height;
     lv_coord_t total_height = height * digit->modulus;
-    lv_coord_t center = ANIMATION_LERP(value, slide_dsc->start_px, slide_dsc->end_px);
+    lv_coord_t center = ANIM_LERP(value, slide_dsc->flow);
 
     // 计算当前屏幕中心的数字
     int center_mod = center % total_height;
@@ -308,44 +329,42 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
     int lower_num = (upper_num + 1) % digit->modulus;
     int lower_off = upper_off + height;
 
-    int upper_opa = LV_OPA_COVER + upper_off * LV_OPA_COVER / height;
+    int upper_opa = MAP(upper_off, 0, -height, LV_OPA_COVER, LV_OPA_TRANSP);
     int lower_opa = LV_OPA_COVER - upper_opa;
 
-    // 动态计算模糊度
-    int blur_pos;
-    if (value != LV_NUMBERFLOW_ANIM_STATE_END) {
-        blur_pos = LV_ABS(center - slide_dsc->last_px[0]);
-        blur_pos = blur_pos * 2 / 3;
-        if (blur_pos >= 1) {
-            blur_pos -= 1;
+    if (numberflow->blur_data != NULL) {
+        // 动态计算模糊度
+        uint8_t blur_pos;
+        if (value != LV_NUMBERFLOW_ANIM_STATE_END) {
+            blur_pos = LV_ABS(center - slide_dsc->flow.curr);
+            blur_pos = blur_pos * 2 / 3;
+            if (blur_pos >= 1) {
+                blur_pos -= 1;
+            }
+            if (blur_pos > numberflow->blur_data->blur_level) {
+                blur_pos = numberflow->blur_data->blur_level;
+            }
         }
-        if (blur_pos > numberflow->blur_data->max_blur_level) {
-            blur_pos = numberflow->blur_data->max_blur_level;
+        else {
+            // 最后一帧一定是不模糊的
+            blur_pos = 0;
         }
     }
-    else {
-        // 最后一帧一定是不模糊的
-        blur_pos = 0;
-    }
-
-    slide_dsc->last_px[1] = slide_dsc->last_px[0];
-    slide_dsc->last_px[0] = center;
 
     // 动态计算全局不透明度
-    int digit_opa = ANIMATION_LERP(value, slide_dsc->start_opacity, slide_dsc->end_opacity);
+    int16_t digit_opa = ANIM_LERP(value, slide_dsc->opa);
     if (digit_opa > LV_OPA_COVER) {
         digit_opa = LV_OPA_COVER;
     }
-    slide_dsc->last_opacity = digit_opa;
+    slide_dsc->opa.curr = (lv_opa_t)digit_opa;
+    slide_dsc->width.curr = ANIM_LERP(digit->anim.anim_state, slide_dsc->width);
+    slide_dsc->last_flow = slide_dsc->flow.curr;
+    slide_dsc->flow.curr = center;
 
-    slide_dsc->curr_width = ANIMATION_LERP(digit->anim.anim_state,
-                                           slide_dsc->start_width,
-                                           slide_dsc->end_width);
+    draw_number(numberflow, ctx, upper_num, x, upper_off, slide_dsc->width.curr, (upper_opa * digit_opa) / LV_OPA_COVER);
+    draw_number(numberflow, ctx, lower_num, x, lower_off, slide_dsc->width.curr, (lower_opa * digit_opa) / LV_OPA_COVER);
 
-    draw_number(numberflow, ctx, upper_num, x, upper_off, slide_dsc->curr_width, (upper_opa * digit_opa) / LV_OPA_COVER);
-    draw_number(numberflow, ctx, lower_num, x, lower_off, slide_dsc->curr_width, (lower_opa * digit_opa) / LV_OPA_COVER);
-
-    return slide_dsc->curr_width;
+    return slide_dsc->width.curr;
 }
 
 static void draw_numberflow(lv_event_t * e)
@@ -355,14 +374,14 @@ static void draw_numberflow(lv_event_t * e)
 
     lv_draw_ctx_t * draw_ctx = lv_event_get_draw_ctx(e);
 
-    int32_t x_offset = ANIMATION_LERP(numberflow->anim_state, numberflow->start_x_offset, numberflow->target_x_offset);
-    numberflow->current_x_offset = x_offset;
+    int32_t x_ofs = ANIM_LERP(numberflow->anim_state, numberflow->x_ofs);
+    numberflow->x_ofs.curr = x_ofs;
 
     /*We need to count invisible digits's width*/
     for (int32_t i = 0; i < numberflow->digit_count; i++)
     {
-        x_offset += draw_digit(draw_ctx, &numberflow->digits[i], x_offset);
-        x_offset += numberflow->letter_space;
+        x_ofs += draw_digit(draw_ctx, &numberflow->digits[i], x_ofs);
+        x_ofs += numberflow->letter_space;
     }
 }
 
@@ -386,16 +405,16 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
         /*Need to redraw the whole up/down fading area*/
         *s = LV_MAX(*s, numberflow->number_height);
         /*Also check for x_offset to display fading digits on the left/right*/
-        if(numberflow->current_x_offset < 0)
-            *s = LV_MAX(*s, -numberflow->current_x_offset);
+        if(numberflow->x_ofs.curr < 0)
+            *s = LV_MAX(*s, -numberflow->x_ofs.curr);
         else
-            *s = LV_MAX(*s, numberflow->current_x_offset + numberflow->current_content_width);
+            *s = LV_MAX(*s, numberflow->x_ofs.curr + numberflow->width.curr);
     }
     else if(code == LV_EVENT_GET_SELF_SIZE) {
         lv_point_t * p = lv_event_get_param(e);
-        p->x = ANIMATION_LERP(numberflow->anim_state, numberflow->start_content_width, numberflow->target_content_width);
+        p->x = ANIM_LERP(numberflow->anim_state, numberflow->width);
+        numberflow->width.curr = p->x;
         p->y = numberflow->height;
-        numberflow->current_content_width = p->x;
     }
     else if (code == LV_EVENT_STYLE_CHANGED)
     {
@@ -459,43 +478,39 @@ static void lv_nf_digit_anim_start(lv_anim_t * a)
     lv_coord_t total_height = line_height * digit->modulus;
 
     // 移除accumulate方式产生的多余的循环坐标
-    lv_coord_t end_px = slide_dsc->end_px;
-    lv_coord_t start_px = slide_dsc->last_px[0];
-    lv_coord_t last_frame_px = slide_dsc->last_px[1];
+    lv_coord_t end_px = slide_dsc->flow.end;
+    lv_coord_t start_px = slide_dsc->flow.curr;
+    lv_coord_t last_frame_px = slide_dsc->last_flow;
     lv_coord_t start_px_overflow = (start_px / total_height) * total_height;
     start_px -= start_px_overflow;
     end_px -= start_px_overflow;
     last_frame_px -= start_px_overflow;
 
     // 更新不透明度
-    slide_dsc->start_opacity = slide_dsc->last_opacity;
-    slide_dsc->end_opacity = slide_start_dsc->target_opa;
+    ANIM_UPDATE(slide_dsc->opa, slide_start_dsc->target_opa);
 
     // 更新位移信息
-    slide_dsc->start_px = start_px;
-    slide_dsc->end_px = end_px + slide_start_dsc->delta_px;
-    slide_dsc->last_px[0] = last_frame_px;  // 回溯速度，避免切换时模糊计算错误
-    slide_dsc->last_px[1] = last_frame_px;
+    slide_dsc->flow.begin = start_px;
+    slide_dsc->flow.end = end_px + slide_start_dsc->ofs_y;
+    slide_dsc->flow.curr = last_frame_px;  // 回溯速度，避免切换时模糊计算错误
     slide_dsc->last_num = slide_start_dsc->target_num % digit->modulus;
     if (slide_dsc->last_num < 0) slide_dsc->last_num += digit->modulus;
 
     // 避免abs(end-start)超过2整圈以影响观感
-    lv_coord_t remaining = slide_dsc->end_px - slide_dsc->start_px;
+    lv_coord_t remaining = slide_dsc->flow.end - slide_dsc->flow.begin;
     lv_coord_t remaining_overflow = 0;
     if (remaining > total_height) 
         remaining_overflow = (int)((remaining - total_height) / total_height) * total_height;
     else if (remaining < -total_height) 
         remaining_overflow = (int)((remaining + total_height) / total_height) * total_height;
 
-    slide_dsc->end_px -= remaining_overflow;
+    slide_dsc->flow.end -= remaining_overflow;
 
     digit->anim.anim_state = LV_NUMBERFLOW_ANIM_STATE_START;
 
     // 更新目标宽度
-    digit->slide_dsc.start_width = digit->slide_dsc.curr_width;
-    digit->slide_dsc.end_width = lv_nf_get_number_width(
-                                        (lv_numberflow_t *)digit->anim.numberflow,
-                                        digit->slide_dsc.last_num);
+    int16_t width = lv_nf_get_number_width(numberflow, digit->slide_dsc.last_num);
+    ANIM_UPDATE(slide_dsc->width, width);
 
     lv_obj_invalidate(digit->anim.numberflow);
 }
@@ -531,22 +546,22 @@ int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t dire
     int32_t round_height = height * digit->modulus;
     int last_num = slide_dsc->last_num;
     // 计算本次滚动距离
-    int delta_px = (target_num - last_num) * height;
+    int ofs_y = (target_num - last_num) * height;
     if (direction == 1) {
         /*target > last, otherwise rolling around*/
-        if (delta_px < 0)
-            delta_px += round_height;
+        if (ofs_y < 0)
+            ofs_y += round_height;
     }
     else if (direction == -1) {
         /*target < last, otherwise rolling around*/
-        if (delta_px > 0)
-            delta_px -= round_height;
+        if (ofs_y > 0)
+            ofs_y -= round_height;
     }
     else {
         /*nearest*/
-        delta_px = delta_px % round_height;
-        if (delta_px > round_height / 2) delta_px -= round_height;
-        if (delta_px < -round_height / 2) delta_px += round_height;
+        ofs_y = ofs_y % round_height;
+        if (ofs_y > round_height / 2) ofs_y -= round_height;
+        if (ofs_y < -round_height / 2) ofs_y += round_height;
     }
 
     if (time == 0) {
@@ -556,31 +571,27 @@ int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t dire
         lv_obj_refresh_self_size((lv_obj_t *)numberflow);
 
         /*Remove redundant loop coordinates generated by the accumulate method
-        * or lv_coord_t will overflow*/
-        lv_coord_t end_px = digit->slide_dsc.end_px + delta_px;
-        lv_coord_t start_px = slide_dsc->last_px[0];
+        * otherwise lv_coord_t will overflow*/
+        lv_coord_t end_px = digit->slide_dsc.flow.end + ofs_y;
+        lv_coord_t start_px = slide_dsc->flow.curr;
         lv_coord_t start_px_overflow = (start_px / round_height) * round_height;
         end_px -= start_px_overflow;
 
-        digit->slide_dsc.end_px = end_px;
-        digit->slide_dsc.start_px = end_px;
-        digit->slide_dsc.last_px[0] = end_px;
-        digit->slide_dsc.last_px[1] = end_px;
+        ANIM_UPDATE_STOP(slide_dsc->flow, end_px);
+        digit->slide_dsc.last_flow = end_px;
 
-        digit->slide_dsc.end_opacity = target_opa;
-        digit->slide_dsc.start_opacity = target_opa;
-        digit->slide_dsc.last_opacity = target_opa;
         digit->slide_dsc.last_num = (target_num + digit->modulus) % digit->modulus;
-        digit->slide_dsc.end_width = lv_nf_get_number_width(numberflow, digit->slide_dsc.last_num);
-        digit->slide_dsc.start_width = digit->slide_dsc.end_width;
-        digit->slide_dsc.curr_width = digit->slide_dsc.end_width;
+        int16_t width = lv_nf_get_number_width(numberflow, digit->slide_dsc.last_num);
+
+        ANIM_UPDATE_STOP(slide_dsc->opa, target_opa);
+        ANIM_UPDATE_STOP(slide_dsc->width, width);
     }
     else {
-        if (delta_px == 0 && target_opa == slide_dsc->end_opacity) {
+        if (ofs_y == 0 && target_opa == slide_dsc->opa.end) {
             /*target didn't changed so we don't need to animate*/
             return 0;
         }
-        digit->slide_start_dsc.delta_px = delta_px;
+        digit->slide_start_dsc.ofs_y = ofs_y;
         digit->slide_start_dsc.target_num = target_num;
         digit->slide_start_dsc.target_opa = target_opa;
 
@@ -611,8 +622,8 @@ static void lv_nf_init_digit(lv_numberflow_t *numberflow, _lv_nf_digit_t *digit)
     lv_memset_00(digit, sizeof(_lv_nf_digit_t));
     digit->modulus = 10;
     digit->anim.numberflow = (lv_obj_t *)numberflow;
-    digit->slide_dsc.curr_width = lv_nf_get_number_width(numberflow, 0);
-    digit->slide_dsc.start_width = digit->slide_dsc.curr_width;
+    int16_t width0 = lv_nf_get_number_width(numberflow, 0);
+    ANIM_UPDATE_STOP(digit->slide_dsc.width, width0);
 }
 
 static bool lv_nf_realloc_digit(lv_numberflow_t *numberflow, int32_t count, bool push_back)
@@ -712,11 +723,6 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     int32_t x_offset_start_delta = 0;
     int32_t x_offset_end = 0;
     uint16_t width0 = lv_nf_get_number_width(numberflow, 0);
-
-    for (int32_t i = 0; i < digit_count_delta; i++)
-    {
-        numberflow->digits[i].slide_dsc.start_width = width0;
-    }
     
     x_offset_start_delta = -digit_count_delta * width0;
     for (int32_t i = numberflow->digit_count - visible_digit_cnt; i < numberflow->digit_count; ++i) {
@@ -783,10 +789,8 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
 
     /*Size Animation*/
     if(anim_time == 0) {
-        numberflow->start_content_width = width_end;
-        numberflow->target_content_width = width_end;
-        numberflow->start_x_offset = x_offset_end;
-        numberflow->target_x_offset = x_offset_end;
+        ANIM_UPDATE_STOP(numberflow->width, width_end);
+        ANIM_UPDATE_STOP(numberflow->x_ofs, x_offset_end);
         lv_anim_del(obj, lv_nf_size_anim);
         numberflow->anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
         lv_obj_invalidate(obj);
@@ -795,12 +799,14 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     else {
         /*For non-monospace fonts, only update animation when width increase or digit
         * count change, to prevent animation stuck at one place when fast updating.
-        * For monospace fonts, width will be the same unless digit count change.*/
-        if (width_end > numberflow->target_content_width || x_offset_start_delta != 0 || numberflow->target_x_offset != x_offset_end) {
-            numberflow->start_content_width = numberflow->current_content_width;
-            numberflow->target_content_width = width_end;
-            numberflow->start_x_offset = numberflow->current_x_offset + x_offset_start_delta;
-            numberflow->target_x_offset = x_offset_end;
+        * For monospace fonts, width will be the same unless digit count change*/
+        if (width_end > numberflow->width.end || x_offset_start_delta != 0 || numberflow->x_ofs.end != x_offset_end) {
+            ANIM_UPDATE(numberflow->width, width_end);
+            /*When a new digit is inserted on the left side, update the starting
+            * value of the X offset so that the position of the original digit
+            * remains unchanged*/
+            numberflow->x_ofs.begin = numberflow->x_ofs.curr + x_offset_start_delta;
+            numberflow->x_ofs.end = x_offset_end;
             lv_anim_t a;
             lv_anim_init(&a);
             lv_anim_set_var(&a, obj);
