@@ -593,7 +593,7 @@ static bool digit_realloc(lv_numberflow_t *numberflow, int32_t count, bool push_
     return true;
 }
 
-int32_t digit_roll(_lv_nf_digit_t* digit, int32_t target_num, int32_t direction,
+static int32_t digit_roll(_lv_nf_digit_t* digit, int32_t target_num, int32_t direction,
                          int32_t target_opa, lv_anim_path_cb_t path, uint32_t time)
 {
     lv_numberflow_t *numberflow = (lv_numberflow_t *)digit->anim.numberflow;
