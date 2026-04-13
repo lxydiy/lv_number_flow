@@ -197,18 +197,17 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
     numberflow->anim_path = lv_numberflow_ease_curve;
     numberflow->blur_data = NULL;
+
     numberflow->line_space = lv_obj_get_style_text_line_space(obj, 0);
     numberflow->letter_space = lv_obj_get_style_text_letter_space(obj, 0);
+    numberflow->height = lv_font_get_line_height(lv_obj_get_style_text_font(obj, LV_PART_MAIN));
+    numberflow->number_height = numberflow->height + numberflow->line_space;
 
     numberflow->value = -1;
 
     numberflow->digit_count = 0;
-    numberflow->digits = NULL;
-    lv_memset_00(numberflow->digits_ptr_static, sizeof(numberflow->digits_ptr_static));
-    numberflow->height = lv_font_get_line_height(lv_obj_get_style_text_font(obj, LV_PART_MAIN));
-    numberflow->number_height = numberflow->height + numberflow->line_space;
-
     numberflow->visible_digit_cnt_prev = 0;
+    numberflow->digits = NULL;
 
     numberflow->width.begin = 0;
     numberflow->width.curr = 0;

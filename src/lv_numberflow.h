@@ -88,7 +88,6 @@ typedef struct {
     uint8_t digit_count;        /**< Total digit count allocated*/
     uint8_t visible_digit_cnt_prev;   /**< Visible digits after last number change*/
     _lv_nf_digit_t *digits;     /**< Array of digits descriptions, [0] is the one's place*/
-    _lv_nf_digit_t *digits_ptr_static[LV_NUMBERFLOW_MAX_DIGITS];
 
     _lv_nf_anim_dsc_t x_ofs;    /**< X offset animation of widget*/
     _lv_nf_anim_dsc_t width;    /**< Width animation of widget*/
