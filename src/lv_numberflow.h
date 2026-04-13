@@ -59,16 +59,6 @@ typedef struct {
 } _lv_nf_anim_dsc_t;
 
 typedef struct {
-    int8_t last_num;       // 当前动画目标number
-
-    lv_coord_t last_flow;   // 前一帧循环坐标，动态更新，范围同start_px
-
-    _lv_nf_anim_dsc_t flow;
-    _lv_nf_anim_dsc_t opa;
-    _lv_nf_anim_dsc_t width;
-} _lv_nf_slide_dsc_t;
-
-typedef struct {
     lv_coord_t ofs_y;        /**< Pixels to move this digit's Y down*/
     int8_t target_num;         /**< New number of this digit*/
     lv_opa_t target_opa;        /**< New opacity of this digit*/
@@ -76,7 +66,15 @@ typedef struct {
 
 typedef struct {
     uint8_t modulus;                            /**< Modulus number of this digit*/
-    _lv_nf_slide_dsc_t slide_dsc;               /**< Digit count of numbers*/
+
+    int8_t last_num;       // 当前动画目标number
+
+    lv_coord_t last_flow;   // 前一帧循环坐标，动态更新，范围同start_px
+
+    _lv_nf_anim_dsc_t flow;
+    _lv_nf_anim_dsc_t opa;
+    _lv_nf_anim_dsc_t width;
+
     _lv_nf_slide_start_dsc_t slide_start_dsc;   /**< New slide description to update*/
     _lv_nf_anim_state_t anim;
 } _lv_nf_digit_t;
