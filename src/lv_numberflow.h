@@ -38,7 +38,6 @@ typedef struct {
     uint32_t start;             /**< Start offset of glyph blob*/
 } lv_nf_glyph_blur_dsc_t;
 
-
 typedef struct {
     const lv_nf_glyph_blur_dsc_t* blurs;    /**< Blurs of this character*/
     int16_t x_adv[10];                      /**< Draw next character after this distance*/
@@ -59,24 +58,24 @@ typedef struct {
 } _lv_nf_anim_dsc_t;
 
 typedef struct {
-    lv_coord_t ofs_y;        /**< Pixels to move this digit's Y down*/
-    int8_t target_num;         /**< New number of this digit*/
+    lv_coord_t ofs_y;           /**< Pixels to move this digit's Y down*/
+    int8_t target_num;          /**< New number of this digit*/
     lv_opa_t target_opa;        /**< New opacity of this digit*/
 } _lv_nf_slide_start_dsc_t;
 
 typedef struct {
-    uint8_t modulus;                            /**< Modulus number of this digit*/
+    uint8_t modulus;            /**< Modulus number of this digit*/
 
-    int8_t last_num;       // 当前动画目标number
+    int8_t last_num;            /**< Number in the center when the animation ends*/
 
-    lv_coord_t last_flow;   // 前一帧循环坐标，动态更新，范围同start_px
+    lv_coord_t last_flow;       /**< Last frame's flow position, used to keep motion blur after animation update*/
 
-    _lv_nf_anim_dsc_t flow;
-    _lv_nf_anim_dsc_t opa;
-    _lv_nf_anim_dsc_t width;
+    _lv_nf_anim_dsc_t flow;     /**< Flow position animation*/
+    _lv_nf_anim_dsc_t opa;      /**< Opacity animation*/
+    _lv_nf_anim_dsc_t width;    /**< Width animation for non-monospace fonts to flow smoothly*/
 
     _lv_nf_slide_start_dsc_t slide_start_dsc;   /**< New slide description to update*/
-    _lv_nf_anim_state_t anim;
+    _lv_nf_anim_state_t anim;   /**< Digit animation state*/
 } _lv_nf_digit_t;
 
 typedef struct {
@@ -91,15 +90,15 @@ typedef struct {
     _lv_nf_digit_t *digits;     /**< Array of digits descriptions, [0] is the one's place*/
     _lv_nf_digit_t *digits_ptr_static[LV_NUMBERFLOW_MAX_DIGITS];
 
-    _lv_nf_anim_dsc_t x_ofs;
-    _lv_nf_anim_dsc_t width;
+    _lv_nf_anim_dsc_t x_ofs;    /**< X offset animation of widget*/
+    _lv_nf_anim_dsc_t width;    /**< Width animation of widget*/
 
     int16_t anim_state;         /**< Size animation state*/
 
-    lv_coord_t height;          /**< Line height of font*/
+    lv_coord_t height;          /**< The font line height. Also the content height of the widget*/
     lv_coord_t line_space;
     lv_coord_t letter_space;
-    lv_coord_t number_height;   /**< height + line_gap*/
+    lv_coord_t number_height;   /**< height + line_gap, to calculate flow position*/
 } lv_numberflow_t;
 
 extern const lv_obj_class_t lv_numberflow_class;

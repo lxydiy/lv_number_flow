@@ -319,7 +319,7 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
     lv_coord_t total_height = height * digit->modulus;
     lv_coord_t center = ANIM_LERP(value, digit->flow);
 
-    // 计算当前屏幕中心的数字
+    /*Calculate current number*/
     int center_mod = center % total_height;
     if (center_mod < 0) center_mod += total_height;
 
@@ -332,7 +332,7 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
     int lower_opa = LV_OPA_COVER - upper_opa;
 
     if (numberflow->blur_data != NULL) {
-        // 动态计算模糊度
+        /*Calculate blur based on flowing position difference*/
         uint8_t blur_pos;
         if (value != LV_NUMBERFLOW_ANIM_STATE_END) {
             blur_pos = LV_ABS(center - digit->flow.curr);
@@ -345,12 +345,11 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
             }
         }
         else {
-            // 最后一帧一定是不模糊的
+            /*There shouldn't be any blur at the last frame*/
             blur_pos = 0;
         }
     }
 
-    // 动态计算全局不透明度
     int16_t digit_opa = ANIM_LERP(value, digit->opa);
     if (digit_opa > LV_OPA_COVER) {
         digit_opa = LV_OPA_COVER;
@@ -475,7 +474,7 @@ static void lv_nf_digit_anim_start(lv_anim_t * a)
     lv_coord_t line_height = numberflow->number_height;
     lv_coord_t total_height = line_height * digit->modulus;
 
-    // 移除accumulate方式产生的多余的循环坐标
+    /*Remove redundant flow coordinates as we are using accumulate mode*/
     lv_coord_t end_px = digit->flow.end;
     lv_coord_t start_px = digit->flow.curr;
     lv_coord_t last_frame_px = digit->last_flow;
@@ -484,17 +483,18 @@ static void lv_nf_digit_anim_start(lv_anim_t * a)
     end_px -= start_px_overflow;
     last_frame_px -= start_px_overflow;
 
-    // 更新不透明度
+    /*Update digit opacity*/
     ANIM_UPDATE(digit->opa, slide_start_dsc->target_opa);
 
-    // 更新位移信息
+    /*Update flow position*/
     digit->flow.begin = start_px;
     digit->flow.end = end_px + slide_start_dsc->ofs_y;
-    digit->flow.curr = last_frame_px;  // 回溯速度，避免切换时模糊计算错误
+    /*Reset 'current' flow position to last frame's or the speed will be zero at next frame*/
+    digit->flow.curr = last_frame_px;
     digit->last_num = slide_start_dsc->target_num % digit->modulus;
     if (digit->last_num < 0) digit->last_num += digit->modulus;
 
-    // 避免abs(end-start)超过2整圈以影响观感
+    /*Clamp abs(end-begin) inside 2 full cycle to avoid flowing too fast*/
     lv_coord_t remaining = digit->flow.end - digit->flow.begin;
     lv_coord_t remaining_overflow = 0;
     if (remaining > total_height) 
@@ -506,7 +506,7 @@ static void lv_nf_digit_anim_start(lv_anim_t * a)
 
     digit->anim.anim_state = LV_NUMBERFLOW_ANIM_STATE_START;
 
-    // 更新目标宽度
+    /*Update digit width*/
     int16_t width = lv_nf_get_number_width(numberflow, digit->last_num);
     ANIM_UPDATE(digit->width, width);
 
@@ -542,15 +542,16 @@ int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t dire
     lv_coord_t height = numberflow->number_height;
     int32_t round_height = height * digit->modulus;
     int last_num = digit->last_num;
-    // 计算本次滚动距离
+
+    /*Calculate remaining flow distance*/
     int ofs_y = (target_num - last_num) * height;
     if (direction == 1) {
-        /*target > last, otherwise rolling around*/
+        /*assuming target > last, otherwise rolling around*/
         if (ofs_y < 0)
             ofs_y += round_height;
     }
     else if (direction == -1) {
-        /*target < last, otherwise rolling around*/
+        /*assuming target < last, otherwise rolling around*/
         if (ofs_y > 0)
             ofs_y -= round_height;
     }
@@ -604,8 +605,8 @@ int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t dire
 
         lv_anim_set_ready_cb(&a, lv_nf_digit_anim_ready);
 
-        /*Using 'accumulate' mode, we need to update slide_dsc just before the
-        * animation start for smooth transition*/
+        /*We need to update digit position just before current animation start
+        * to achieve smooth transition*/
         lv_anim_set_start_cb(&a, lv_nf_digit_anim_start);
         lv_anim_set_early_apply(&a, false);
 
