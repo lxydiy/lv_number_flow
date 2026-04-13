@@ -46,6 +46,7 @@
 static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
 static void lv_numberflow_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
 static int32_t lv_numberflow_ease_curve(const lv_anim_t * anim);
+static void reset_animations(lv_numberflow_t *numberflow);
 static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e);
 static uint16_t lv_nf_get_number_width(lv_numberflow_t *numberflow, uint8_t number);
 static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value, lv_anim_enable_t en);
@@ -123,6 +124,20 @@ void lv_numberflow_set_anim_path(lv_obj_t * obj, lv_anim_path_cb_t path)
     }
 }
 
+void lv_numberflow_set_blur_data(lv_obj_t * obj, const lv_numberflow_blur_data_t * blur_data)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+
+    if (numberflow->blur_data == blur_data) return;
+
+    reset_animations(numberflow);
+
+    numberflow->blur_data = blur_data;
+
+    reset_animations(numberflow);
+}
+
 /*=====================
  * Getter functions
  *====================*/
@@ -142,6 +157,15 @@ lv_anim_path_cb_t lv_numberflow_get_anim_path(const lv_obj_t * obj)
 
     return numberflow->anim_path;
 }
+
+const lv_numberflow_blur_data_t * lv_numberflow_get_blur_data(const lv_obj_t * obj)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+
+    return numberflow->blur_data;
+}
+
 /**********************
  *   STATIC FUNCTIONS
  **********************/
@@ -153,10 +177,7 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
 
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
     numberflow->anim_path = lv_numberflow_ease_curve;
-    numberflow->glyph_dsc = NULL;
-    numberflow->glyph_blob = NULL;
-    numberflow->max_blur_level = 0;
-    numberflow->y_offset = 0;
+    numberflow->blur_data = NULL;
     numberflow->line_space = lv_obj_get_style_text_line_space(obj, 0);
     numberflow->letter_space = lv_obj_get_style_text_letter_space(obj, 0);
 
@@ -225,6 +246,13 @@ static int32_t lv_numberflow_ease_curve(const lv_anim_t * anim)
     return new_value;
 }
 
+static void reset_animations(lv_numberflow_t *numberflow)
+{
+    if (numberflow->digit_count != 0) {
+        lv_numberflow_set_value_with_anim((lv_obj_t *)numberflow, numberflow->value, LV_ANIM_OFF);
+    }
+}
+
 static uint16_t draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx, int32_t number,
                         lv_coord_t x, lv_coord_t y, uint16_t curr_width, lv_opa_t opa)
 {
@@ -291,8 +319,8 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
         if (blur_pos >= 1) {
             blur_pos -= 1;
         }
-        if (blur_pos > numberflow->max_blur_level) {
-            blur_pos = numberflow->max_blur_level;
+        if (blur_pos > numberflow->blur_data->max_blur_level) {
+            blur_pos = numberflow->blur_data->max_blur_level;
         }
     }
     else {
@@ -378,9 +406,7 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
 
         if (height != numberflow->height || line_space != numberflow->line_space || letter_space != numberflow->letter_space) {
             /*Reset animation due to line_height change*/
-            if (numberflow->digit_count != 0) {
-                lv_numberflow_set_value_with_anim(obj, numberflow->value, LV_ANIM_OFF);
-            }
+            reset_animations(numberflow);
 
             numberflow->height = height;
             numberflow->line_space = line_space;
@@ -388,9 +414,7 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
             numberflow->letter_space = letter_space;
 
             /*Reset animation again with new line_height*/
-            if (numberflow->digit_count != 0) {
-                lv_numberflow_set_value_with_anim(obj, numberflow->value, LV_ANIM_OFF);
-            }
+            reset_animations(numberflow);
         }
     }
     

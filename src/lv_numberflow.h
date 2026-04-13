@@ -31,7 +31,6 @@ extern "C" {
  **********************/
 
 typedef struct {
-    int32_t radius;             /**< Blur step of glyph (TODO: Remove later)*/
     int32_t left;               /**< X offset from baseline-left to top-left*/
     int32_t top;                /**< Y offset from baseline-left to top-left*/
     int32_t width;              /**< Glyph image width*/
@@ -45,6 +44,14 @@ typedef struct {
     int32_t width;              /**< Width of this character without blur*/
     const lv_nf_glyph_blur_dsc_t* blurs;    /**< Blurs of this character*/
 } lv_nf_glyph_dsc_t;
+
+typedef struct {
+    const lv_nf_glyph_dsc_t* glyph_dsc;
+    int32_t glyph_count;
+    const uint8_t* glyph_blob;
+    int32_t max_blur_level;
+    uint16_t line_height;
+} lv_numberflow_blur_data_t;
 
 typedef struct {
     int32_t last_num;       // 当前动画目标number
@@ -84,10 +91,7 @@ typedef struct {
     lv_obj_t obj;
     lv_anim_path_cb_t anim_path;
 
-    const lv_nf_glyph_dsc_t *glyph_dsc;
-    const uint8_t* glyph_blob;
-    int32_t max_blur_level;     /**< Blur level count in glyph_dsc->blurs*/
-    lv_coord_t y_offset;        /**< Height to move glyphs to it's baseline*/
+    const lv_numberflow_blur_data_t *blur_data;
 
     int32_t value;              /**< Last value set by lv_numberflow_set_value*/
     int32_t digit_count;        /**< Total digit count allocated*/
@@ -141,6 +145,13 @@ void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t ani
  */
 void lv_numberflow_set_anim_path(lv_obj_t * obj, lv_anim_path_cb_t path);
 
+/**
+ * Set the blur data of the numberflow.
+ * @param obj       pointer to a numberflow object
+ * @param blur_data pointer to the blur data. if NULL, will use font in style to render numbers.
+ */
+void lv_numberflow_set_blur_data(lv_obj_t * obj, const lv_numberflow_blur_data_t * blur_data);
+
 /*=====================
  * Getter functions
  *====================*/
@@ -158,6 +169,13 @@ int32_t lv_numberflow_get_value(const lv_obj_t * obj);
  * @return          the animation path callback of the numberflow
  */
 lv_anim_path_cb_t lv_numberflow_get_anim_path(const lv_obj_t * obj);
+
+/**
+ * Get the blur data of a numberflow
+ * @param obj       pointer to a numberflow object
+ * @return          pointer to the blur data of the numberflow
+ */
+const lv_numberflow_blur_data_t * lv_numberflow_get_blur_data(const lv_obj_t * obj);
 
 /**********************
  *      MACROS
