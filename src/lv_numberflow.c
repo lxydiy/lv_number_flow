@@ -48,7 +48,7 @@ static void lv_numberflow_destructor(const lv_obj_class_t * class_p, lv_obj_t * 
 static int32_t lv_numberflow_ease_curve(const lv_anim_t * anim);
 static void reset_animations(lv_numberflow_t *numberflow);
 static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e);
-static uint16_t lv_nf_get_number_width(lv_numberflow_t *numberflow, uint8_t number);
+static uint16_t get_number_width(lv_numberflow_t *numberflow, uint8_t number);
 static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value, lv_anim_enable_t en);
 
 /**********************
@@ -67,7 +67,7 @@ const lv_obj_class_t lv_numberflow_class = {
 /** To be more consistent with the original animation of NumberFlow, a custom
  *  animation curve is used. This animation curve below is mapped from:
  *  https://github.com/barvian/number-flow/blob/7ab1a7164ef1b088267f789b07581fefef064b68/packages/number-flow/src/lite.ts#L73 */
-static const uint16_t number_flow_ease_lut[90] = {
+static const uint16_t number_flow_ease_lut[LV_NUMBERFLOW_ANIM_LUT_SIZE] = {
     0,     5,    19,    40,    68,    98,   132,   169,   207,   246,   285,   324,   362,   399,   436,   472,
   506,   539,   570,   600,   629,   655,   681,   706,   728,   749,   769,   787,   805,   821,   837,   851,
   864,   877,   888,   898,   908,   918,   926,   934,   941,   947,   953,   959,   965,   970,   974,   978,
@@ -267,13 +267,6 @@ static int32_t lv_numberflow_ease_curve(const lv_anim_t * anim)
     return new_value;
 }
 
-static void reset_animations(lv_numberflow_t *numberflow)
-{
-    if (numberflow->digit_count != 0) {
-        lv_numberflow_set_value_with_anim((lv_obj_t *)numberflow, numberflow->value, LV_ANIM_OFF);
-    }
-}
-
 static uint16_t draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx, int32_t number,
                         lv_coord_t x, lv_coord_t y, uint16_t curr_width, lv_opa_t opa)
 {
@@ -292,7 +285,7 @@ static uint16_t draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx
     pos.x = coords.x1 + x;
     pos.y = coords.y1 + y;
 
-    uint16_t width = lv_nf_get_number_width(numberflow, number);
+    uint16_t width = get_number_width(numberflow, number);
 
     /*Compensate for the horizontal position of non-monospace fonts to make them
     * display centered*/
@@ -440,14 +433,7 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
     }
 }
 
-static uint16_t lv_nf_get_number_width(lv_numberflow_t *numberflow, uint8_t number)
-{
-    // TODO: implement number width buffer.
-    const lv_font_t *font = lv_obj_get_style_text_font((lv_obj_t *)numberflow, LV_PART_MAIN);
-    return lv_font_get_glyph_width(font, number + '0', '\0');
-}
-
-static void lv_nf_digit_anim(void * var, int32_t value)
+static void anim_digit(void * var, int32_t value)
 {
     _lv_nf_digit_t * digit = var;
 
@@ -456,7 +442,7 @@ static void lv_nf_digit_anim(void * var, int32_t value)
     lv_obj_invalidate(digit->anim.numberflow);
 }
 
-static void lv_nf_digit_anim_ready(lv_anim_t * a)
+static void anim_digit_ready(lv_anim_t * a)
 {
     _lv_nf_digit_t * digit = a->var;
 
@@ -465,7 +451,7 @@ static void lv_nf_digit_anim_ready(lv_anim_t * a)
     lv_obj_invalidate(digit->anim.numberflow);
 }
 
-static void lv_nf_digit_anim_start(lv_anim_t * a)
+static void anim_digit_start(lv_anim_t * a)
 {
     _lv_nf_digit_t * digit = a->var;
     _lv_nf_slide_start_dsc_t* slide_start_dsc = &digit->slide_start_dsc;
@@ -482,9 +468,6 @@ static void lv_nf_digit_anim_start(lv_anim_t * a)
     start_px -= start_px_overflow;
     end_px -= start_px_overflow;
     last_frame_px -= start_px_overflow;
-
-    /*Update digit opacity*/
-    ANIM_UPDATE(digit->opa, slide_start_dsc->target_opa);
 
     /*Update flow position*/
     digit->flow.begin = start_px;
@@ -507,13 +490,16 @@ static void lv_nf_digit_anim_start(lv_anim_t * a)
     digit->anim.anim_state = LV_NUMBERFLOW_ANIM_STATE_START;
 
     /*Update digit width*/
-    int16_t width = lv_nf_get_number_width(numberflow, digit->last_num);
+    int16_t width = get_number_width(numberflow, digit->last_num);
     ANIM_UPDATE(digit->width, width);
+
+    /*Update digit opacity*/
+    ANIM_UPDATE(digit->opa, slide_start_dsc->target_opa);
 
     lv_obj_invalidate(digit->anim.numberflow);
 }
 
-static void lv_nf_size_anim(void * var, int32_t value)
+static void anim_size(void * var, int32_t value)
 {
     lv_obj_t * obj = (lv_obj_t *)var;
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
@@ -523,7 +509,7 @@ static void lv_nf_size_anim(void * var, int32_t value)
     lv_obj_refresh_self_size(obj);
 }
 
-static void lv_nf_size_anim_ready(lv_anim_t * a)
+static void anim_size_ready(lv_anim_t * a)
 {
     lv_obj_t * obj = (lv_obj_t *)a->var;
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
@@ -534,7 +520,81 @@ static void lv_nf_size_anim_ready(lv_anim_t * a)
     lv_obj_refresh_self_size(obj);
 }
 
-int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t direction,
+static uint16_t get_number_width(lv_numberflow_t *numberflow, uint8_t number)
+{
+    // TODO: implement number width buffer.
+    const lv_font_t *font = lv_obj_get_style_text_font((lv_obj_t *)numberflow, LV_PART_MAIN);
+    return lv_font_get_glyph_width(font, number + '0', '\0');
+}
+
+static void reset_animations(lv_numberflow_t *numberflow)
+{
+    if (numberflow->digit_count != 0) {
+        lv_numberflow_set_value_with_anim((lv_obj_t *)numberflow, numberflow->value, LV_ANIM_OFF);
+    }
+}
+
+static void digit_init(lv_numberflow_t *numberflow, _lv_nf_digit_t *digit)
+{
+    lv_memset_00(digit, sizeof(_lv_nf_digit_t));
+    digit->modulus = 10;
+    digit->anim.numberflow = (lv_obj_t *)numberflow;
+    int16_t width0 = get_number_width(numberflow, 0);
+    ANIM_UPDATE_STOP(digit->width, width0);
+}
+
+static bool digit_realloc(lv_numberflow_t *numberflow, int32_t count, bool push_back)
+{
+    if (numberflow->digit_count < count) {
+        lv_anim_t *a[LV_NUMBERFLOW_MAX_DIGITS];
+        lv_memset_00(a, sizeof(a));
+
+        /*Store old animation pointer to change their var later*/
+        for (uint8_t i = 0; i < numberflow->digit_count; i++)
+        {
+            a[i] = lv_anim_get(&numberflow->digits[i], anim_digit);
+        }
+
+        numberflow->digits = lv_mem_realloc(numberflow->digits, count * sizeof(_lv_nf_digit_t));
+        if (numberflow->digits == NULL) {
+            numberflow->digit_count = 0;
+            numberflow->visible_digit_cnt_prev = 0;
+            return false;
+        }
+
+        int32_t delta = count - numberflow->digit_count;
+        if (push_back == false) {
+            /*Move old digits to the back*/
+            for (int32_t i = numberflow->digit_count - 1; i >= 0; i--) {
+                numberflow->digits[i + delta] = numberflow->digits[i];
+            }
+
+            for (int32_t i = 0; i < delta; i++) {
+                digit_init(numberflow, &numberflow->digits[i]);
+            }
+            for (uint8_t i = 0; i < numberflow->digit_count; i++) {
+                if (a[i] != NULL) {
+                    lv_anim_set_var(a[i], &numberflow->digits[i + delta]);
+                }
+            }
+        }
+        else {
+            for (int32_t i = numberflow->digit_count; i < count; i++) {
+                digit_init(numberflow, &numberflow->digits[i]);
+            }
+            for (uint8_t i = 0; i < numberflow->digit_count; i++) {
+                if (a[i] != NULL) {
+                    lv_anim_set_var(a[i], &numberflow->digits[i]);
+                }
+            }
+        }
+
+        numberflow->digit_count = count;
+    }
+    return true;
+}
+
+int32_t digit_roll(_lv_nf_digit_t* digit, int32_t target_num, int32_t direction,
                          int32_t target_opa, lv_anim_path_cb_t path, uint32_t time)
 {
     lv_numberflow_t *numberflow = (lv_numberflow_t *)digit->anim.numberflow;
@@ -563,7 +623,7 @@ int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t dire
     }
 
     if (time == 0) {
-        lv_anim_del(digit, lv_nf_digit_anim);
+        lv_anim_del(digit, anim_digit);
         digit->anim.anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
         lv_obj_invalidate((lv_obj_t *)numberflow);
         lv_obj_refresh_self_size((lv_obj_t *)numberflow);
@@ -579,7 +639,7 @@ int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t dire
         digit->last_flow = end_px;
 
         digit->last_num = (target_num + digit->modulus) % digit->modulus;
-        int16_t width = lv_nf_get_number_width(numberflow, digit->last_num);
+        int16_t width = get_number_width(numberflow, digit->last_num);
 
         ANIM_UPDATE_STOP(digit->opa, target_opa);
         ANIM_UPDATE_STOP(digit->width, width);
@@ -596,83 +656,23 @@ int32_t lv_nf_roll_digit(_lv_nf_digit_t* digit, int32_t target_num, int32_t dire
         lv_anim_t a;
 
         lv_anim_init(&a);
-        lv_anim_set_exec_cb(&a, lv_nf_digit_anim);
+        lv_anim_set_exec_cb(&a, anim_digit);
         lv_anim_set_time(&a, time);
         lv_anim_set_path_cb(&a, path);
 
         lv_anim_set_values(&a, LV_NUMBERFLOW_ANIM_STATE_START, LV_NUMBERFLOW_ANIM_STATE_END);
         lv_anim_set_var(&a, digit);
 
-        lv_anim_set_ready_cb(&a, lv_nf_digit_anim_ready);
+        lv_anim_set_ready_cb(&a, anim_digit_ready);
 
         /*We need to update digit position just before current animation start
         * to achieve smooth transition*/
-        lv_anim_set_start_cb(&a, lv_nf_digit_anim_start);
+        lv_anim_set_start_cb(&a, anim_digit_start);
         lv_anim_set_early_apply(&a, false);
 
         lv_anim_start(&a);
     }
     return target_num - last_num;
-}
-
-static void lv_nf_init_digit(lv_numberflow_t *numberflow, _lv_nf_digit_t *digit)
-{
-    lv_memset_00(digit, sizeof(_lv_nf_digit_t));
-    digit->modulus = 10;
-    digit->anim.numberflow = (lv_obj_t *)numberflow;
-    int16_t width0 = lv_nf_get_number_width(numberflow, 0);
-    ANIM_UPDATE_STOP(digit->width, width0);
-}
-
-static bool lv_nf_realloc_digit(lv_numberflow_t *numberflow, int32_t count, bool push_back)
-{
-    if (numberflow->digit_count < count) {
-        lv_anim_t *a[LV_NUMBERFLOW_MAX_DIGITS];
-        lv_memset_00(a, sizeof(a));
-
-        /*Store old animation pointer to change their var later*/
-        for (uint8_t i = 0; i < numberflow->digit_count; i++)
-        {
-            a[i] = lv_anim_get(&numberflow->digits[i], lv_nf_digit_anim);
-        }
-
-        numberflow->digits = lv_mem_realloc(numberflow->digits, count * sizeof(_lv_nf_digit_t));
-        if (numberflow->digits == NULL) {
-            numberflow->digit_count = 0;
-            numberflow->visible_digit_cnt_prev = 0;
-            return false;
-        }
-
-        int32_t delta = count - numberflow->digit_count;
-        if (push_back == false) {
-            /*Move old digits to the back*/
-            for (int32_t i = numberflow->digit_count - 1; i >= 0; i--) {
-                numberflow->digits[i + delta] = numberflow->digits[i];
-            }
-
-            for (int32_t i = 0; i < delta; i++) {
-                lv_nf_init_digit(numberflow, &numberflow->digits[i]);
-            }
-            for (uint8_t i = 0; i < numberflow->digit_count; i++) {
-                if (a[i] != NULL) {
-                    lv_anim_set_var(a[i], &numberflow->digits[i + delta]);
-                }
-            }
-        }
-        else {
-            for (int32_t i = numberflow->digit_count; i < count; i++) {
-                lv_nf_init_digit(numberflow, &numberflow->digits[i]);
-            }
-            for (uint8_t i = 0; i < numberflow->digit_count; i++) {
-                if (a[i] != NULL) {
-                    lv_anim_set_var(a[i], &numberflow->digits[i]);
-                }
-            }
-        }
-
-        numberflow->digit_count = count;
-    }
-    return true;
 }
 
 static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value, lv_anim_enable_t en)
@@ -703,7 +703,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
 
     // TODO: implement digit alignment
     digit_count_delta = numberflow->digit_count;
-    lv_nf_realloc_digit(numberflow, visible_digit_cnt, false);
+    digit_realloc(numberflow, visible_digit_cnt, false);
     digit_count_delta = numberflow->digit_count - digit_count_delta;
     if (numberflow->digit_count == 0) return;
 
@@ -720,11 +720,11 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     int32_t width_end = numberflow->letter_space * (numberflow->digit_count - 1);
     int32_t x_offset_start_delta = 0;
     int32_t x_offset_end = 0;
-    uint16_t width0 = lv_nf_get_number_width(numberflow, 0);
+    uint16_t width0 = get_number_width(numberflow, 0);
     
     x_offset_start_delta = -digit_count_delta * width0;
     for (int32_t i = numberflow->digit_count - visible_digit_cnt; i < numberflow->digit_count; ++i) {
-        width_end += lv_nf_get_number_width(numberflow, nums[i]);
+        width_end += get_number_width(numberflow, nums[i]);
     }
     x_offset_end = -((numberflow->digit_count - visible_digit_cnt) * width0);
 
@@ -760,7 +760,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
                 rolling_dir = -1;
         }
 
-        int32_t delta_num = lv_nf_roll_digit(
+        int32_t delta_num = digit_roll(
             &numberflow->digits[i],
             num + rolling_offset * numberflow->digits[i].modulus,
             rolling_dir,
@@ -789,7 +789,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     if(anim_time == 0) {
         ANIM_UPDATE_STOP(numberflow->width, width_end);
         ANIM_UPDATE_STOP(numberflow->x_ofs, x_offset_end);
-        lv_anim_del(obj, lv_nf_size_anim);
+        lv_anim_del(obj, anim_size);
         numberflow->anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
         lv_obj_invalidate(obj);
         lv_obj_refresh_self_size(obj);
@@ -808,9 +808,9 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
             lv_anim_t a;
             lv_anim_init(&a);
             lv_anim_set_var(&a, obj);
-            lv_anim_set_exec_cb(&a, lv_nf_size_anim);
+            lv_anim_set_exec_cb(&a, anim_size);
             lv_anim_set_values(&a, LV_NUMBERFLOW_ANIM_STATE_START, LV_NUMBERFLOW_ANIM_STATE_END);
-            lv_anim_set_ready_cb(&a, lv_nf_size_anim_ready);
+            lv_anim_set_ready_cb(&a, anim_size_ready);
             lv_anim_set_time(&a, anim_time);
             lv_anim_set_path_cb(&a, numberflow->anim_path);
             lv_anim_start(&a);
