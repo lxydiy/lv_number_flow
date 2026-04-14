@@ -80,7 +80,8 @@ typedef struct {
 
 typedef struct {
     lv_obj_t obj;
-    lv_anim_path_cb_t anim_path;
+    lv_anim_path_cb_t anim_path_flow;
+    lv_anim_path_cb_t anim_path_size;
 
     const lv_numberflow_blur_data_t *blur_data;
 
@@ -128,11 +129,18 @@ lv_obj_t * lv_numberflow_create(lv_obj_t * parent);
 void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t anim);
 
 /**
- * Set a new animation path callback on the numberflow
+ * Set a new animation path callback for numbers flowing
  * @param obj       pointer to a numberflow object
- * @param path      new animation path callback
+ * @param path      new animation path, NULL for default path 
  */
-void lv_numberflow_set_anim_path(lv_obj_t * obj, lv_anim_path_cb_t path);
+void lv_numberflow_set_anim_path_flow(lv_obj_t * obj, lv_anim_path_cb_t path);
+
+/**
+ * Set a new animation path callback for size transition
+ * @param obj       pointer to a numberflow object
+ * @param path      new animation path, NULL for default path 
+ */
+void lv_numberflow_set_anim_path_size(lv_obj_t * obj, lv_anim_path_cb_t path);
 
 /**
  * Set the blur data of the numberflow.

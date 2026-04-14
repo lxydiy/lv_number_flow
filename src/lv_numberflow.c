@@ -130,16 +130,29 @@ void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t ani
     lv_numberflow_set_value_with_anim(obj, value, anim);
 }
 
-void lv_numberflow_set_anim_path(lv_obj_t * obj, lv_anim_path_cb_t path)
+void lv_numberflow_set_anim_path_flow(lv_obj_t * obj, lv_anim_path_cb_t path)
 {
     LV_ASSERT_OBJ(obj, MY_CLASS);
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
 
     if (path == NULL) {
-        numberflow->anim_path = lv_numberflow_ease_curve;
+        numberflow->anim_path_flow = lv_numberflow_ease_curve;
     }
     else {
-        numberflow->anim_path = path;
+        numberflow->anim_path_flow = path;
+    }
+}
+
+void lv_numberflow_set_anim_path_size(lv_obj_t * obj, lv_anim_path_cb_t path)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+
+    if (path == NULL) {
+        numberflow->anim_path_size = lv_anim_path_ease_out;
+    }
+    else {
+        numberflow->anim_path_size = path;
     }
 }
 
@@ -169,12 +182,20 @@ int32_t lv_numberflow_get_value(const lv_obj_t * obj)
     return numberflow->value;
 }
 
-lv_anim_path_cb_t lv_numberflow_get_anim_path(const lv_obj_t * obj)
+lv_anim_path_cb_t lv_numberflow_get_anim_path_flow(const lv_obj_t * obj)
 {
     LV_ASSERT_OBJ(obj, MY_CLASS);
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
 
-    return numberflow->anim_path;
+    return numberflow->anim_path_flow;
+}
+
+lv_anim_path_cb_t lv_numberflow_get_anim_path_size(const lv_obj_t * obj)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+
+    return numberflow->anim_path_size;
 }
 
 const lv_numberflow_blur_data_t * lv_numberflow_get_blur_data(const lv_obj_t * obj)
@@ -195,7 +216,8 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     LV_TRACE_OBJ_CREATE("begin");
 
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
-    numberflow->anim_path = lv_numberflow_ease_curve;
+    numberflow->anim_path_flow = lv_numberflow_ease_curve;
+    numberflow->anim_path_size = lv_anim_path_ease_out;
     numberflow->blur_data = NULL;
 
     numberflow->line_space = lv_obj_get_style_text_line_space(obj, 0);
@@ -770,7 +792,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
             num + rolling_offset * numberflow->digits[i].modulus,
             rolling_dir,
             opacity,
-            numberflow->anim_path,
+            numberflow->anim_path_flow,
             anim_time
         );
 
@@ -817,7 +839,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
             lv_anim_set_values(&a, LV_NUMBERFLOW_ANIM_STATE_START, LV_NUMBERFLOW_ANIM_STATE_END);
             lv_anim_set_ready_cb(&a, anim_size_ready);
             lv_anim_set_time(&a, anim_time);
-            lv_anim_set_path_cb(&a, numberflow->anim_path);
+            lv_anim_set_path_cb(&a, numberflow->anim_path_flow);
             lv_anim_start(&a);
         }
     }
