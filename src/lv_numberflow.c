@@ -202,6 +202,7 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     numberflow->letter_space = lv_obj_get_style_text_letter_space(obj, 0);
     numberflow->height = lv_font_get_line_height(lv_obj_get_style_text_font(obj, LV_PART_MAIN));
     numberflow->number_height = numberflow->height + numberflow->line_space;
+    lv_memset_00(numberflow->x_adv, sizeof(numberflow->x_adv));
 
     numberflow->value = -1;
 
@@ -274,7 +275,7 @@ static uint16_t draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx
     lv_draw_label_dsc_t label_dsc;
     lv_draw_label_dsc_init(&label_dsc);
     label_dsc.color = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
-    label_dsc.font = lv_obj_get_style_text_font(obj, LV_PART_MAIN);
+    label_dsc.font = numberflow->font;
     label_dsc.opa = opa;
 
     lv_point_t pos;
@@ -409,18 +410,22 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
     else if (code == LV_EVENT_STYLE_CHANGED)
     {
         /*Update line height and space*/
-        lv_coord_t height = lv_font_get_line_height(lv_obj_get_style_text_font(obj, LV_PART_MAIN));
+        lv_font_t *font = lv_obj_get_style_text_font(obj, LV_PART_MAIN);
+        lv_coord_t height = lv_font_get_line_height(font);
         lv_coord_t line_space = lv_obj_get_style_text_line_space(obj, LV_PART_MAIN);
         lv_coord_t letter_space = lv_obj_get_style_text_letter_space(obj, LV_PART_MAIN);
 
-        if (height != numberflow->height || line_space != numberflow->line_space || letter_space != numberflow->letter_space) {
+        if (font != numberflow->font || height != numberflow->height
+            || line_space != numberflow->line_space || letter_space != numberflow->letter_space) {
             /*Reset animation due to line_height change*/
             reset_animations(numberflow);
 
+            numberflow->font = font;
             numberflow->height = height;
             numberflow->line_space = line_space;
             numberflow->number_height = height + numberflow->line_space;
             numberflow->letter_space = letter_space;
+            lv_memset_00(numberflow->x_adv, sizeof(numberflow->x_adv));
 
             /*Reset animation again with new line_height*/
             reset_animations(numberflow);
@@ -521,9 +526,10 @@ static void anim_size_ready(lv_anim_t * a)
 
 static uint16_t get_number_width(lv_numberflow_t *numberflow, uint8_t number)
 {
-    // TODO: implement number width buffer.
-    const lv_font_t *font = lv_obj_get_style_text_font((lv_obj_t *)numberflow, LV_PART_MAIN);
-    return lv_font_get_glyph_width(font, number + '0', '\0');
+    if (numberflow->x_adv[number] != 0) return numberflow->x_adv[number];
+    uint16_t width = lv_font_get_glyph_width(numberflow->font, number + '0', '\0');
+    numberflow->x_adv[number] = width;
+    return width;
 }
 
 static void reset_animations(lv_numberflow_t *numberflow)

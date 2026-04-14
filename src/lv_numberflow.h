@@ -94,10 +94,12 @@ typedef struct {
 
     int16_t anim_state;         /**< Size animation state*/
 
+    lv_font_t *font;
     lv_coord_t height;          /**< The font line height. Also the content height of the widget*/
     lv_coord_t line_space;
     lv_coord_t letter_space;
     lv_coord_t number_height;   /**< height + line_gap, to calculate flow position*/
+    int16_t x_adv[10];          /**< character x_adv cache*/
 } lv_numberflow_t;
 
 extern const lv_obj_class_t lv_numberflow_class;
