@@ -95,7 +95,7 @@ typedef struct {
 
     int16_t anim_state;         /**< Size animation state*/
 
-    lv_font_t *font;
+    const lv_font_t *font;
     lv_coord_t height;          /**< The font line height. Also the content height of the widget*/
     lv_coord_t line_space;
     lv_coord_t letter_space;

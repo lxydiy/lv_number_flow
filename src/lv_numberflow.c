@@ -431,7 +431,7 @@ static void recalculate_style(lv_numberflow_t *numberflow)
     lv_obj_t *obj = (lv_obj_t *)numberflow;
 
     /*Update line height and space*/
-    lv_font_t *font = lv_obj_get_style_text_font(obj, LV_PART_MAIN);
+    const lv_font_t *font = lv_obj_get_style_text_font(obj, LV_PART_MAIN);
     lv_coord_t height;
     lv_coord_t line_space = lv_obj_get_style_text_line_space(obj, LV_PART_MAIN);
     lv_coord_t letter_space = lv_obj_get_style_text_letter_space(obj, LV_PART_MAIN);
