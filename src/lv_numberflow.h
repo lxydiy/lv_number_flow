@@ -48,6 +48,7 @@ typedef struct {
 
 typedef struct {
     int16_t anim_state;         /**< Animation value passing to draw function*/
+    bool updated;               /**< Animation update flag to recalculate pos and blur*/
     lv_obj_t *numberflow;
 } _lv_nf_anim_state_t;
 
@@ -64,6 +65,15 @@ typedef struct {
 } _lv_nf_slide_start_dsc_t;
 
 typedef struct {
+    int8_t num;
+    lv_coord_t x;
+    lv_coord_t y;
+    uint16_t curr_width;
+    lv_opa_t opa;
+    uint8_t blur_level;
+} _lv_nf_number_draw_dsc_t;
+
+typedef struct {
     uint8_t modulus;            /**< Modulus number of this digit*/
 
     int8_t last_num;            /**< Number in the center when the animation ends*/
@@ -76,6 +86,8 @@ typedef struct {
 
     _lv_nf_slide_start_dsc_t slide_start_dsc;   /**< New slide description to update*/
     _lv_nf_anim_state_t anim;   /**< Digit animation state*/
+
+    _lv_nf_number_draw_dsc_t draw[2];
 } _lv_nf_digit_t;
 
 typedef struct {

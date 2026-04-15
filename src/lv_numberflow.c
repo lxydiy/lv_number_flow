@@ -239,7 +239,7 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     numberflow->x_ofs.curr = 0;
     numberflow->x_ofs.end = 0;
 
-    numberflow->anim_state = 0;
+    numberflow->anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
 
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_CHECKABLE);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
@@ -253,7 +253,7 @@ static void lv_numberflow_destructor(const lv_obj_class_t * class_p, lv_obj_t * 
 {
     LV_UNUSED(class_p);
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
-    
+
     if(numberflow->digits != NULL) {
         for (int32_t i = 0; i < numberflow->digit_count; i++)
         {
@@ -294,29 +294,29 @@ static inline const lv_nf_glyph_blur_dsc_t *get_blur(lv_numberflow_t *numberflow
     return &numberflow->blur_data->blurs[num * blur_level_max + blur_level];
 }
 
-static uint16_t draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx, int8_t num,
-                        lv_coord_t x, lv_coord_t y, uint16_t curr_width, lv_opa_t opa, uint8_t blur_level)
+static void draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx,
+                        _lv_nf_number_draw_dsc_t *num_draw_dsc)
 {
     lv_obj_t *obj = (lv_obj_t *)numberflow;
-    uint16_t width = get_number_width(numberflow, num);
+    uint16_t width = get_number_width(numberflow, num_draw_dsc->num);
     lv_color_t color = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
 
-    if (opa == LV_OPA_TRANSP) return width;
+    if (num_draw_dsc->opa == LV_OPA_TRANSP) return;
 
     if (numberflow->blur_data != NULL) {
         lv_draw_img_dsc_t img_draw_dsc;
         lv_draw_img_dsc_init(&img_draw_dsc);
-        img_draw_dsc.opa = opa;
+        img_draw_dsc.opa = num_draw_dsc->opa;
         img_draw_dsc.recolor = color;
         img_draw_dsc.recolor_opa = LV_OPA_COVER;
 
         lv_area_t coords;
         lv_obj_get_content_coords(obj, &coords);
 
-        const lv_nf_glyph_blur_dsc_t *blur = get_blur(numberflow, num, blur_level);
+        const lv_nf_glyph_blur_dsc_t *blur = get_blur(numberflow, num_draw_dsc->num, num_draw_dsc->blur_level);
 
-        coords.x1 = coords.x1 + x + blur->ofs_x + ((curr_width - width + 1) / 2);
-        coords.y1 = coords.y1 + y + numberflow->blur_data->line_height + blur->ofs_y;
+        coords.x1 = coords.x1 + num_draw_dsc->x + blur->ofs_x + ((num_draw_dsc->curr_width - width + 1) / 2);
+        coords.y1 = coords.y1 + num_draw_dsc->y + numberflow->blur_data->line_height + blur->ofs_y;
         coords.x2 = coords.x1 + blur->box_w - 1;
         coords.y2 = coords.y1 + blur->box_h - 1;
 
@@ -327,30 +327,51 @@ static uint16_t draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx
         lv_draw_label_dsc_init(&label_dsc);
         label_dsc.color = color;
         label_dsc.font = numberflow->font;
-        label_dsc.opa = opa;
-    
+        label_dsc.opa = num_draw_dsc->opa;
+
         lv_point_t pos;
         lv_area_t coords;
         lv_obj_get_content_coords(obj, &coords);
-    
-        pos.x = coords.x1 + x;
-        pos.y = coords.y1 + y;
-    
-    
+
+        pos.x = coords.x1 + num_draw_dsc->x;
+        pos.y = coords.y1 + num_draw_dsc->y;
+
         /*Compensate for the horizontal position of non-monospace fonts to make them
         * display centered*/
-        pos.x += (curr_width - width + 1) / 2;
-    
-        lv_draw_letter(draw_ctx, &label_dsc, &pos, num + '0');
+        pos.x += (num_draw_dsc->curr_width - width + 1) / 2;
+
+        lv_draw_letter(draw_ctx, &label_dsc, &pos, num_draw_dsc->num + '0');
     }
 
     return width;
 }
 
-static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_t x)
+static void draw_numberflow(lv_event_t * e)
+{
+    lv_obj_t * obj = lv_event_get_target(e);
+    lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+
+    lv_draw_ctx_t * ctx = lv_event_get_draw_ctx(e);
+
+    for (int32_t i = 0; i < numberflow->digit_count; i++)
+    {
+        draw_number(numberflow, ctx, &numberflow->digits[i].draw[0]);
+        draw_number(numberflow, ctx, &numberflow->digits[i].draw[1]);
+    }
+}
+
+static uint16_t layout_digit(_lv_nf_digit_t *digit, lv_coord_t x)
 {
     lv_numberflow_t *numberflow = (lv_numberflow_t *)digit->anim.numberflow;
     lv_obj_t *obj = (lv_obj_t *)numberflow;
+
+    if (digit->anim.updated == false) {
+        /*Digit animation didn't update. Only update x and return old width*/
+        digit->draw[0].x = x;
+        digit->draw[1].x = x;
+        return digit->draw[0].curr_width;
+    }
+    digit->anim.updated = false;
 
     int32_t value = digit->anim.anim_state;
 
@@ -373,7 +394,7 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
 
     int upper_opa = MAP(upper_off, 0, -height, LV_OPA_COVER, LV_OPA_TRANSP);
     int lower_opa = LV_OPA_COVER - upper_opa;
-    
+
     int32_t blur_pos;
     if (numberflow->blur_data != NULL) {
         /*Calculate blur based on flowing position difference*/
@@ -402,18 +423,26 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
     digit->last_flow = digit->flow.curr;
     digit->flow.curr = center;
 
-    draw_number(numberflow, ctx, upper_num, x, upper_off, digit->width.curr, (upper_opa * digit_opa) / LV_OPA_COVER, blur_pos);
-    draw_number(numberflow, ctx, lower_num, x, lower_off, digit->width.curr, (lower_opa * digit_opa) / LV_OPA_COVER, blur_pos);
+    digit->draw[0].num = upper_num;
+    digit->draw[0].x = x;
+    digit->draw[0].y = upper_off;
+    digit->draw[0].curr_width = digit->width.curr;
+    digit->draw[0].opa = (upper_opa * digit_opa) / LV_OPA_COVER;
+    digit->draw[0].blur_level = blur_pos;
+
+    digit->draw[1].num = lower_num;
+    digit->draw[1].x = x;
+    digit->draw[1].y = lower_off;
+    digit->draw[1].curr_width = digit->width.curr;
+    digit->draw[1].opa = (lower_opa * digit_opa) / LV_OPA_COVER;
+    digit->draw[1].blur_level = blur_pos;
 
     return digit->width.curr;
 }
 
-static void draw_numberflow(lv_event_t * e)
+static void layout_numberflow(lv_numberflow_t *numberflow)
 {
-    lv_obj_t * obj = lv_event_get_target(e);
-    lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
-
-    lv_draw_ctx_t * draw_ctx = lv_event_get_draw_ctx(e);
+    lv_obj_t * obj = (lv_obj_t *)numberflow;
 
     int32_t x_ofs = ANIM_LERP(numberflow->anim_state, numberflow->x_ofs);
     numberflow->x_ofs.curr = x_ofs;
@@ -421,7 +450,7 @@ static void draw_numberflow(lv_event_t * e)
     /*We need to count invisible digits's width*/
     for (int32_t i = 0; i < numberflow->digit_count; i++)
     {
-        x_ofs += draw_digit(draw_ctx, &numberflow->digits[i], x_ofs);
+        x_ofs += layout_digit(&numberflow->digits[i], x_ofs);
         x_ofs += numberflow->letter_space;
     }
 }
@@ -497,8 +526,9 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
     {
         recalculate_style(numberflow);
     }
-    
+
     else if(code == LV_EVENT_DRAW_MAIN) {
+        layout_numberflow(numberflow);
         draw_numberflow(e);
     }
 }
@@ -508,6 +538,7 @@ static void anim_digit(void * var, int32_t value)
     _lv_nf_digit_t * digit = var;
 
     digit->anim.anim_state = value;
+    digit->anim.updated = true;
 
     lv_obj_invalidate(digit->anim.numberflow);
 }
@@ -517,6 +548,7 @@ static void anim_digit_ready(lv_anim_t * a)
     _lv_nf_digit_t * digit = a->var;
 
     digit->anim.anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
+    digit->anim.updated = true;
 
     lv_obj_invalidate(digit->anim.numberflow);
 }
@@ -551,9 +583,9 @@ static void anim_digit_start(lv_anim_t * a)
     /*Clamp abs(end-begin) inside 2 full cycle to avoid flowing too fast*/
     lv_coord_t remaining = digit->flow.end - digit->flow.begin;
     lv_coord_t remaining_overflow = 0;
-    if (remaining > total_height) 
+    if (remaining > total_height)
         remaining_overflow = (int)((remaining - total_height) / total_height) * total_height;
-    else if (remaining < -total_height) 
+    else if (remaining < -total_height)
         remaining_overflow = (int)((remaining + total_height) / total_height) * total_height;
 
     digit->flow.end -= remaining_overflow;
@@ -798,7 +830,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     int32_t x_offset_start_delta = 0;
     int32_t x_offset_end = 0;
     uint16_t width0 = get_number_width(numberflow, 0);
-    
+
     x_offset_start_delta = -digit_count_delta * width0;
     for (int32_t i = numberflow->digit_count - visible_digit_cnt; i < numberflow->digit_count; ++i) {
         width_end += get_number_width(numberflow, nums[i]);
@@ -809,7 +841,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     int32_t rolling_dir = 0;
     int32_t rolling_offset = 0;
 
-    /*First, if visible digits count changed, we should force rolling direction. 
+    /*First, if visible digits count changed, we should force rolling direction.
     * For example: 999 -> 1000 or 123 -> 12*/
     if (visible_digit_cnt > numberflow->visible_digit_cnt_prev) {
         rolling_dir = 1;
