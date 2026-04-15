@@ -47,6 +47,7 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
 static void lv_numberflow_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
 static int32_t lv_numberflow_ease_curve(const lv_anim_t * anim);
 static void reset_animations(lv_numberflow_t *numberflow);
+static void recalculate_style(lv_numberflow_t *numberflow);
 static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e);
 static uint16_t get_number_width(lv_numberflow_t *numberflow, uint8_t number);
 static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value, lv_anim_enable_t en);
@@ -163,11 +164,9 @@ void lv_numberflow_set_blur_data(lv_obj_t * obj, const lv_numberflow_blur_data_t
 
     if (numberflow->blur_data == blur_data) return;
 
-    reset_animations(numberflow);
-
     numberflow->blur_data = blur_data;
 
-    reset_animations(numberflow);
+    recalculate_style(numberflow);
 }
 
 /*=====================
@@ -289,32 +288,61 @@ static int32_t lv_numberflow_ease_curve(const lv_anim_t * anim)
     return new_value;
 }
 
-static uint16_t draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx, int32_t number,
-                        lv_coord_t x, lv_coord_t y, uint16_t curr_width, lv_opa_t opa)
+static inline const lv_nf_glyph_blur_dsc_t *get_blur(lv_numberflow_t *numberflow, int8_t num, uint8_t blur_level)
+{
+    uint8_t blur_level_max = numberflow->blur_data->blur_level;
+    return &numberflow->blur_data->blurs[num * blur_level_max + blur_level];
+}
+
+static uint16_t draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx, int8_t num,
+                        lv_coord_t x, lv_coord_t y, uint16_t curr_width, lv_opa_t opa, uint8_t blur_level)
 {
     lv_obj_t *obj = (lv_obj_t *)numberflow;
+    uint16_t width = get_number_width(numberflow, num);
+    lv_color_t color = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
 
-    lv_draw_label_dsc_t label_dsc;
-    lv_draw_label_dsc_init(&label_dsc);
-    label_dsc.color = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
-    label_dsc.font = numberflow->font;
-    label_dsc.opa = opa;
+    if (opa == LV_OPA_TRANSP) return width;
 
-    lv_point_t pos;
-    lv_area_t coords;
-    lv_obj_get_content_coords(obj, &coords);
+    if (numberflow->blur_data != NULL) {
+        lv_draw_img_dsc_t img_draw_dsc;
+        lv_draw_img_dsc_init(&img_draw_dsc);
+        img_draw_dsc.opa = opa;
+        img_draw_dsc.recolor = color;
+        img_draw_dsc.recolor_opa = LV_OPA_COVER;
 
-    pos.x = coords.x1 + x;
-    pos.y = coords.y1 + y;
+        lv_area_t coords;
+        lv_obj_get_content_coords(obj, &coords);
 
-    uint16_t width = get_number_width(numberflow, number);
+        const lv_nf_glyph_blur_dsc_t *blur = get_blur(numberflow, num, blur_level);
 
-    /*Compensate for the horizontal position of non-monospace fonts to make them
-    * display centered*/
-    pos.x += (curr_width - width + 1) / 2;
+        coords.x1 = coords.x1 + x + blur->ofs_x + ((curr_width - width + 1) / 2);
+        coords.y1 = coords.y1 + y + numberflow->blur_data->line_height + blur->ofs_y;
+        coords.x2 = coords.x1 + blur->box_w - 1;
+        coords.y2 = coords.y1 + blur->box_h - 1;
 
-    if (opa > LV_OPA_TRANSP)
-        lv_draw_letter(draw_ctx, &label_dsc, &pos, number + '0');
+        lv_draw_img_decoded(draw_ctx, &img_draw_dsc, &coords, numberflow->blur_data->glyph_blob + blur->start, LV_IMG_CF_ALPHA_8BIT);
+    }
+    else {
+        lv_draw_label_dsc_t label_dsc;
+        lv_draw_label_dsc_init(&label_dsc);
+        label_dsc.color = color;
+        label_dsc.font = numberflow->font;
+        label_dsc.opa = opa;
+    
+        lv_point_t pos;
+        lv_area_t coords;
+        lv_obj_get_content_coords(obj, &coords);
+    
+        pos.x = coords.x1 + x;
+        pos.y = coords.y1 + y;
+    
+    
+        /*Compensate for the horizontal position of non-monospace fonts to make them
+        * display centered*/
+        pos.x += (curr_width - width + 1) / 2;
+    
+        lv_draw_letter(draw_ctx, &label_dsc, &pos, num + '0');
+    }
 
     return width;
 }
@@ -345,18 +373,18 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
 
     int upper_opa = MAP(upper_off, 0, -height, LV_OPA_COVER, LV_OPA_TRANSP);
     int lower_opa = LV_OPA_COVER - upper_opa;
-
+    
+    int32_t blur_pos;
     if (numberflow->blur_data != NULL) {
         /*Calculate blur based on flowing position difference*/
-        uint8_t blur_pos;
         if (value != LV_NUMBERFLOW_ANIM_STATE_END) {
-            blur_pos = LV_ABS(center - digit->flow.curr);
-            blur_pos = blur_pos * 2 / 3;
+            blur_pos = center - digit->flow.curr;
+            blur_pos = LV_ABS(blur_pos) / 2;
             if (blur_pos >= 1) {
                 blur_pos -= 1;
             }
-            if (blur_pos > numberflow->blur_data->blur_level) {
-                blur_pos = numberflow->blur_data->blur_level;
+            if (blur_pos >= numberflow->blur_data->blur_level) {
+                blur_pos = numberflow->blur_data->blur_level - 1;
             }
         }
         else {
@@ -374,8 +402,8 @@ static uint16_t draw_digit(lv_draw_ctx_t * ctx, _lv_nf_digit_t *digit, lv_coord_
     digit->last_flow = digit->flow.curr;
     digit->flow.curr = center;
 
-    draw_number(numberflow, ctx, upper_num, x, upper_off, digit->width.curr, (upper_opa * digit_opa) / LV_OPA_COVER);
-    draw_number(numberflow, ctx, lower_num, x, lower_off, digit->width.curr, (lower_opa * digit_opa) / LV_OPA_COVER);
+    draw_number(numberflow, ctx, upper_num, x, upper_off, digit->width.curr, (upper_opa * digit_opa) / LV_OPA_COVER, blur_pos);
+    draw_number(numberflow, ctx, lower_num, x, lower_off, digit->width.curr, (lower_opa * digit_opa) / LV_OPA_COVER, blur_pos);
 
     return digit->width.curr;
 }
@@ -396,6 +424,42 @@ static void draw_numberflow(lv_event_t * e)
         x_ofs += draw_digit(draw_ctx, &numberflow->digits[i], x_ofs);
         x_ofs += numberflow->letter_space;
     }
+}
+
+static void recalculate_style(lv_numberflow_t *numberflow)
+{
+    lv_obj_t *obj = (lv_obj_t *)numberflow;
+
+    /*Update line height and space*/
+    lv_font_t *font = lv_obj_get_style_text_font(obj, LV_PART_MAIN);
+    lv_coord_t height;
+    lv_coord_t line_space = lv_obj_get_style_text_line_space(obj, LV_PART_MAIN);
+    lv_coord_t letter_space = lv_obj_get_style_text_letter_space(obj, LV_PART_MAIN);
+
+    if (numberflow->blur_data != NULL) {
+        height = numberflow->blur_data->line_height;
+    }
+    else {
+        height = lv_font_get_line_height(font);
+    }
+
+    if (font != numberflow->font || height != numberflow->height
+        || line_space != numberflow->line_space || letter_space != numberflow->letter_space) {
+        /*Reset animation due to line_height change*/
+        reset_animations(numberflow);
+
+        numberflow->font = font;
+        numberflow->height = height;
+        numberflow->line_space = line_space;
+        numberflow->number_height = height + numberflow->line_space;
+        numberflow->letter_space = letter_space;
+        lv_memset_00(numberflow->x_adv, sizeof(numberflow->x_adv));
+
+        /*Reset animation again with new line_height*/
+        reset_animations(numberflow);
+    }
+    lv_obj_invalidate(obj);
+    lv_obj_refresh_self_size(obj);
 }
 
 static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
@@ -431,27 +495,7 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
     }
     else if (code == LV_EVENT_STYLE_CHANGED)
     {
-        /*Update line height and space*/
-        lv_font_t *font = lv_obj_get_style_text_font(obj, LV_PART_MAIN);
-        lv_coord_t height = lv_font_get_line_height(font);
-        lv_coord_t line_space = lv_obj_get_style_text_line_space(obj, LV_PART_MAIN);
-        lv_coord_t letter_space = lv_obj_get_style_text_letter_space(obj, LV_PART_MAIN);
-
-        if (font != numberflow->font || height != numberflow->height
-            || line_space != numberflow->line_space || letter_space != numberflow->letter_space) {
-            /*Reset animation due to line_height change*/
-            reset_animations(numberflow);
-
-            numberflow->font = font;
-            numberflow->height = height;
-            numberflow->line_space = line_space;
-            numberflow->number_height = height + numberflow->line_space;
-            numberflow->letter_space = letter_space;
-            lv_memset_00(numberflow->x_adv, sizeof(numberflow->x_adv));
-
-            /*Reset animation again with new line_height*/
-            reset_animations(numberflow);
-        }
+        recalculate_style(numberflow);
     }
     
     else if(code == LV_EVENT_DRAW_MAIN) {
@@ -500,6 +544,7 @@ static void anim_digit_start(lv_anim_t * a)
     digit->flow.end = end_px + slide_start_dsc->ofs_y;
     /*Reset 'current' flow position to last frame's or the speed will be zero at next frame*/
     digit->flow.curr = last_frame_px;
+    digit->last_flow = last_frame_px;
     digit->last_num = slide_start_dsc->target_num % digit->modulus;
     if (digit->last_num < 0) digit->last_num += digit->modulus;
 
@@ -548,10 +593,15 @@ static void anim_size_ready(lv_anim_t * a)
 
 static uint16_t get_number_width(lv_numberflow_t *numberflow, uint8_t number)
 {
-    if (numberflow->x_adv[number] != 0) return numberflow->x_adv[number];
-    uint16_t width = lv_font_get_glyph_width(numberflow->font, number + '0', '\0');
-    numberflow->x_adv[number] = width;
-    return width;
+    if (numberflow->blur_data != NULL) {
+        return numberflow->blur_data->x_adv[number];
+    }
+    else {
+        if (numberflow->x_adv[number] != 0) return numberflow->x_adv[number];
+        uint16_t width = lv_font_get_glyph_width(numberflow->font, number + '0', '\0');
+        numberflow->x_adv[number] = width;
+        return width;
+    }
 }
 
 static void reset_animations(lv_numberflow_t *numberflow)
