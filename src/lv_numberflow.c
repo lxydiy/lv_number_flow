@@ -342,8 +342,6 @@ static void draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx,
 
         lv_draw_letter(draw_ctx, &label_dsc, &pos, num_draw_dsc->num + '0');
     }
-
-    return width;
 }
 
 static void draw_numberflow(lv_event_t * e)
