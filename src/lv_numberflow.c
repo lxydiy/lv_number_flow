@@ -652,54 +652,51 @@ static void digit_init(lv_numberflow_t *numberflow, _lv_nf_digit_t *digit)
     ANIM_UPDATE_STOP(digit->width, width0);
 }
 
-static bool digit_realloc(lv_numberflow_t *numberflow, int32_t count, bool push_back)
+static bool digit_realloc(lv_numberflow_t *numberflow, uint8_t front, uint8_t back)
 {
-    if (numberflow->digit_count < count) {
-        lv_anim_t *a[LV_NUMBERFLOW_MAX_DIGITS];
-        lv_memset_00(a, sizeof(a));
-
-        /*Store old animation pointer to change their var later*/
-        for (uint8_t i = 0; i < numberflow->digit_count; i++)
-        {
-            a[i] = lv_anim_get(&numberflow->digits[i], anim_digit);
-        }
-
-        numberflow->digits = lv_mem_realloc(numberflow->digits, count * sizeof(_lv_nf_digit_t));
-        if (numberflow->digits == NULL) {
-            numberflow->digit_count = 0;
-            numberflow->visible_digit_cnt_prev = 0;
-            return false;
-        }
-
-        int32_t delta = count - numberflow->digit_count;
-        if (push_back == false) {
-            /*Move old digits to the back*/
-            for (int32_t i = numberflow->digit_count - 1; i >= 0; i--) {
-                numberflow->digits[i + delta] = numberflow->digits[i];
-            }
-
-            for (int32_t i = 0; i < delta; i++) {
-                digit_init(numberflow, &numberflow->digits[i]);
-            }
-            for (uint8_t i = 0; i < numberflow->digit_count; i++) {
-                if (a[i] != NULL) {
-                    lv_anim_set_var(a[i], &numberflow->digits[i + delta]);
-                }
-            }
-        }
-        else {
-            for (int32_t i = numberflow->digit_count; i < count; i++) {
-                digit_init(numberflow, &numberflow->digits[i]);
-            }
-            for (uint8_t i = 0; i < numberflow->digit_count; i++) {
-                if (a[i] != NULL) {
-                    lv_anim_set_var(a[i], &numberflow->digits[i]);
-                }
-            }
-        }
-
-        numberflow->digit_count = count;
+    uint8_t new_count = numberflow->digit_count + front + back;
+    if (new_count > LV_NUMBERFLOW_MAX_DIGITS) {
+        LV_LOG_ERROR("digits overflow, please set LV_NUMBERFLOW_MAX_DIGITS larger");
+        return false;
     }
+    if (front == 0 && back == 0) return true;
+
+    lv_anim_t *a[LV_NUMBERFLOW_MAX_DIGITS];
+    lv_memset_00(a, sizeof(a));
+
+    /*Store old animation pointer to change their var later*/
+    for (uint8_t i = 0; i < numberflow->digit_count; i++) {
+        a[i] = lv_anim_get(&numberflow->digits[i], anim_digit);
+    }
+
+    numberflow->digits = lv_mem_realloc(numberflow->digits, new_count * sizeof(_lv_nf_digit_t));
+    if (numberflow->digits == NULL) {
+        numberflow->digit_count = 0;
+        numberflow->visible_digit_cnt_prev = 0;
+        return false;
+    }
+
+    /*Move old digits to the back*/
+    for (uint8_t i = numberflow->digit_count; i > 0; i--) {
+        numberflow->digits[i + front - 1] = numberflow->digits[i - 1];
+    }
+
+    /*Clear allocated digits*/
+    for (uint8_t i = 0; i < front; i++) {
+        digit_init(numberflow, &numberflow->digits[i]);
+    }
+    for (uint8_t i = 0; i < back; i++) {
+        digit_init(numberflow, &numberflow->digits[i + front + numberflow->digit_count]);
+    }
+
+    /*Update animation var to new digit*/
+    for (uint8_t i = 0; i < numberflow->digit_count; i++) {
+        if (a[i] != NULL) {
+            lv_anim_set_var(a[i], &numberflow->digits[i + front]);
+        }
+    }
+
+    numberflow->digit_count = new_count;
     return true;
 }
 
@@ -790,7 +787,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
 
     int32_t nums[LV_NUMBERFLOW_MAX_DIGITS] = {0};
-    int32_t digit_count_delta;
+    int32_t front;
     int32_t visible_digit_cnt = 0;
     uint32_t anim_time;
 
@@ -812,14 +809,17 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     }
 
     // TODO: implement digit alignment
-    digit_count_delta = numberflow->digit_count;
-    digit_realloc(numberflow, visible_digit_cnt, false);
-    digit_count_delta = numberflow->digit_count - digit_count_delta;
-    if (numberflow->digit_count == 0) return;
+    front = visible_digit_cnt - numberflow->digit_count;
+    if (front > 0) {
+        digit_realloc(numberflow, front, 0);
+        if (numberflow->digit_count == 0) return;
+    }
+    else {
+        front = 0;  /*Digit count didn't change*/
+    }
 
     /*align nums with digits*/
-    for (int32_t i = 0; i < (numberflow->digit_count + 1) / 2; i++)
-    {
+    for (int32_t i = 0; i < (numberflow->digit_count + 1) / 2; i++) {
         int32_t peer = numberflow->digit_count - 1 - i;
         int32_t t;
         t = nums[i];
@@ -832,7 +832,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     int32_t x_offset_end = 0;
     uint16_t width0 = get_number_width(numberflow, 0);
 
-    x_offset_start_delta = -digit_count_delta * width0;
+    x_offset_start_delta = -front * width0;
     for (int32_t i = numberflow->digit_count - visible_digit_cnt; i < numberflow->digit_count; ++i) {
         width_end += get_number_width(numberflow, nums[i]);
     }
