@@ -589,6 +589,7 @@ static void anim_digit_start(lv_anim_t * a)
     digit->flow.end -= remaining_overflow;
 
     digit->anim.anim_state = LV_NUMBERFLOW_ANIM_STATE_START;
+    digit->anim.updated = true;
 
     /*Update digit width*/
     int16_t width = get_number_width(numberflow, digit->last_num);
@@ -645,6 +646,7 @@ static void digit_init(lv_numberflow_t *numberflow, _lv_nf_digit_t *digit)
 {
     lv_memset_00(digit, sizeof(_lv_nf_digit_t));
     digit->modulus = 10;
+    digit->anim.updated = true;
     digit->anim.numberflow = (lv_obj_t *)numberflow;
     int16_t width0 = get_number_width(numberflow, 0);
     ANIM_UPDATE_STOP(digit->width, width0);
@@ -732,6 +734,7 @@ static int32_t digit_roll(_lv_nf_digit_t* digit, int32_t target_num, int32_t dir
     if (time == 0) {
         lv_anim_del(digit, anim_digit);
         digit->anim.anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
+        digit->anim.updated = true;
         lv_obj_invalidate((lv_obj_t *)numberflow);
         lv_obj_refresh_self_size((lv_obj_t *)numberflow);
 
