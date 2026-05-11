@@ -131,6 +131,22 @@ void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t ani
     lv_numberflow_set_value_with_anim(obj, value, anim);
 }
 
+void lv_numberflow_set_mode(lv_obj_t * obj, lv_numberflow_mode_t mode)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+
+    numberflow->mode = mode;
+}
+
+void lv_numberflow_set_dir(lv_obj_t * obj, lv_numberflow_dir_t dir)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+
+    numberflow->dir = dir;
+}
+
 void lv_numberflow_set_anim_path_flow(lv_obj_t * obj, lv_anim_path_cb_t path)
 {
     LV_ASSERT_OBJ(obj, MY_CLASS);
@@ -215,6 +231,8 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     LV_TRACE_OBJ_CREATE("begin");
 
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+    numberflow->mode = LV_NUMBERFLOW_MODE_NORMAL;
+    numberflow->dir = LV_NUMBERFLOW_DIR_CONTINUOUS;
     numberflow->anim_path_flow = lv_numberflow_ease_curve;
     numberflow->anim_path_size = lv_anim_path_ease_out;
     numberflow->blur_data = NULL;
@@ -385,15 +403,30 @@ static uint16_t layout_digit(_lv_nf_digit_t *digit, lv_coord_t x)
     int center_mod = center % total_height;
     if (center_mod < 0) center_mod += total_height;
 
-    int upper_num = center_mod / height;
-    int upper_off = -(center_mod % height);
-    int lower_num = (upper_num + 1) % digit->modulus;
-    int lower_off = upper_off + height;
+    int lower_num, upper_num;
+    int lower_off, upper_off;
+    int lower_opa, upper_opa;
 
-    int upper_opa = MAP(upper_off, 0, -height, LV_OPA_COVER, LV_OPA_TRANSP);
-    int lower_opa = LV_OPA_COVER - upper_opa;
+    if (numberflow->mode == LV_NUMBERFLOW_MODE_NORMAL) {
+        upper_num = center_mod / height;
+        upper_off = -(center_mod % height);
+        lower_num = (upper_num + 1) % digit->modulus;
+        lower_off = upper_off + height;
 
-    int32_t blur_pos;
+        upper_opa = MAP(upper_off, 0, -height, LV_OPA_COVER, LV_OPA_TRANSP);
+        lower_opa = LV_OPA_COVER - upper_opa;
+    }
+    else {
+        lower_num = center_mod / height;
+        lower_off = center_mod % height;
+        upper_num = (lower_num + 1) % digit->modulus;
+        upper_off = lower_off - height;
+
+        lower_opa = MAP(lower_off, 0, height, LV_OPA_COVER, LV_OPA_TRANSP);
+        upper_opa = LV_OPA_COVER - lower_opa;
+    }
+
+    int8_t blur_pos;
     if (numberflow->blur_data != NULL) {
         /*Calculate blur based on flowing position difference*/
         if (value != LV_NUMBERFLOW_ANIM_STATE_END) {
@@ -648,13 +681,13 @@ static void digit_init(lv_numberflow_t *numberflow, _lv_nf_digit_t *digit)
     digit->modulus = 10;
     digit->anim.updated = true;
     digit->anim.numberflow = (lv_obj_t *)numberflow;
-    int16_t width0 = get_number_width(numberflow, 0);
+    uint16_t width0 = get_number_width(numberflow, 0);
     ANIM_UPDATE_STOP(digit->width, width0);
 }
 
-static bool digit_realloc(lv_numberflow_t *numberflow, uint8_t front, uint8_t back)
+static bool digit_realloc(lv_numberflow_t *numberflow, int8_t front, int8_t back)
 {
-    uint8_t new_count = numberflow->digit_count + front + back;
+    int8_t new_count = numberflow->digit_count + front + back;
     if (new_count > LV_NUMBERFLOW_MAX_DIGITS) {
         LV_LOG_ERROR("digits overflow, please set LV_NUMBERFLOW_MAX_DIGITS larger");
         return false;
@@ -665,7 +698,7 @@ static bool digit_realloc(lv_numberflow_t *numberflow, uint8_t front, uint8_t ba
     lv_memset_00(a, sizeof(a));
 
     /*Store old animation pointer to change their var later*/
-    for (uint8_t i = 0; i < numberflow->digit_count; i++) {
+    for (int8_t i = 0; i < numberflow->digit_count; i++) {
         a[i] = lv_anim_get(&numberflow->digits[i], anim_digit);
     }
 
@@ -677,20 +710,20 @@ static bool digit_realloc(lv_numberflow_t *numberflow, uint8_t front, uint8_t ba
     }
 
     /*Move old digits to the back*/
-    for (uint8_t i = numberflow->digit_count; i > 0; i--) {
+    for (int8_t i = numberflow->digit_count; i > 0; i--) {
         numberflow->digits[i + front - 1] = numberflow->digits[i - 1];
     }
 
     /*Clear allocated digits*/
-    for (uint8_t i = 0; i < front; i++) {
+    for (int8_t i = 0; i < front; i++) {
         digit_init(numberflow, &numberflow->digits[i]);
     }
-    for (uint8_t i = 0; i < back; i++) {
+    for (int8_t i = 0; i < back; i++) {
         digit_init(numberflow, &numberflow->digits[i + front + numberflow->digit_count]);
     }
 
     /*Update animation var to new digit*/
-    for (uint8_t i = 0; i < numberflow->digit_count; i++) {
+    for (int8_t i = 0; i < numberflow->digit_count; i++) {
         if (a[i] != NULL) {
             lv_anim_set_var(a[i], &numberflow->digits[i + front]);
         }
@@ -700,17 +733,17 @@ static bool digit_realloc(lv_numberflow_t *numberflow, uint8_t front, uint8_t ba
     return true;
 }
 
-static int32_t digit_roll(_lv_nf_digit_t* digit, int32_t target_num, int32_t direction,
-                         int32_t target_opa, lv_anim_path_cb_t path, uint32_t time)
+static int8_t digit_roll(_lv_nf_digit_t* digit, int8_t target_num, int8_t direction,
+                         lv_opa_t target_opa, lv_anim_path_cb_t path, uint32_t time)
 {
     lv_numberflow_t *numberflow = (lv_numberflow_t *)digit->anim.numberflow;
 
     lv_coord_t height = numberflow->number_height;
     int32_t round_height = height * digit->modulus;
-    int last_num = digit->last_num;
+    int8_t last_num = digit->last_num;
 
     /*Calculate remaining flow distance*/
-    int ofs_y = (target_num - last_num) * height;
+    lv_coord_t ofs_y = (target_num - last_num) * height;
     if (direction == 1) {
         /*assuming target > last, otherwise rolling around*/
         if (ofs_y < 0)
@@ -786,9 +819,9 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
 {
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
 
-    int32_t nums[LV_NUMBERFLOW_MAX_DIGITS] = {0};
-    int32_t front;
-    int32_t visible_digit_cnt = 0;
+    int8_t nums[LV_NUMBERFLOW_MAX_DIGITS] = {0};
+    int8_t front;
+    int8_t visible_digit_cnt = 0;
     uint32_t anim_time;
 
     if(en == LV_ANIM_OFF) {
@@ -819,41 +852,52 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     }
 
     /*align nums with digits*/
-    for (int32_t i = 0; i < (numberflow->digit_count + 1) / 2; i++) {
-        int32_t peer = numberflow->digit_count - 1 - i;
-        int32_t t;
+    for (int8_t i = 0; i < (numberflow->digit_count + 1) / 2; i++) {
+        int8_t peer = numberflow->digit_count - 1 - i;
+        int8_t t;
         t = nums[i];
         nums[i] = nums[peer];
         nums[peer] = t;
     }
 
-    int32_t width_end = numberflow->letter_space * (numberflow->digit_count - 1);
-    int32_t x_offset_start_delta = 0;
-    int32_t x_offset_end = 0;
+    lv_coord_t width_end = numberflow->letter_space * (numberflow->digit_count - 1);
+    lv_coord_t x_offset_start_delta = 0;
+    lv_coord_t x_offset_end = 0;
     uint16_t width0 = get_number_width(numberflow, 0);
 
     x_offset_start_delta = -front * width0;
-    for (int32_t i = numberflow->digit_count - visible_digit_cnt; i < numberflow->digit_count; ++i) {
+    for (int8_t i = numberflow->digit_count - visible_digit_cnt; i < numberflow->digit_count; ++i) {
         width_end += get_number_width(numberflow, nums[i]);
     }
     x_offset_end = -((numberflow->digit_count - visible_digit_cnt) * width0);
 
     /*Calculate number offsets, accumulating results*/
-    int32_t rolling_dir = 0;
-    int32_t rolling_offset = 0;
+    int8_t rolling_offset = 0;
 
-    /*First, if visible digits count changed, we should force rolling direction.
-    * For example: 999 -> 1000 or 123 -> 12*/
-    if (visible_digit_cnt > numberflow->visible_digit_cnt_prev) {
+    int8_t rolling_dir;
+    if (numberflow->dir == LV_NUMBERFLOW_DIR_CONTINUOUS) {
+        /*First, if visible digits count changed, we should force rolling direction.
+        * For example: 999 -> 1000 or 123 -> 12*/
+        if (visible_digit_cnt > numberflow->visible_digit_cnt_prev) {
+            rolling_dir = 1;
+        }
+        else if (visible_digit_cnt < numberflow->visible_digit_cnt_prev) {
+            rolling_dir = -1;
+        }
+    }
+    else if (numberflow->dir == LV_NUMBERFLOW_DIR_INCREASE) {
         rolling_dir = 1;
     }
-    else if (visible_digit_cnt < numberflow->visible_digit_cnt_prev) {
+    else if (numberflow->dir == LV_NUMBERFLOW_DIR_DECREASE) {
         rolling_dir = -1;
     }
+    else {
+        rolling_dir = 0;
+    }
 
-    for (int32_t i = 0; i < numberflow->digit_count; i++) {
+    for (int8_t i = 0; i < numberflow->digit_count; i++) {
         lv_opa_t opacity;
-        int32_t num;
+        int8_t num;
         // TODO: implement digit alignment
         if (i < numberflow->digit_count - visible_digit_cnt) {
             opacity = LV_OPA_TRANSP;
@@ -863,14 +907,16 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
         }
         num = nums[i];
 
-        if (rolling_dir == 0) {
-            if (num > numberflow->digits[i].last_num)
-                rolling_dir = 1;
-            else if (num < numberflow->digits[i].last_num)
-                rolling_dir = -1;
+        if (numberflow->dir == LV_NUMBERFLOW_DIR_CONTINUOUS) {
+            if (rolling_dir == 0) {
+                if (num > numberflow->digits[i].last_num)
+                    rolling_dir = 1;
+                else if (num < numberflow->digits[i].last_num)
+                    rolling_dir = -1;
+            }
         }
 
-        int32_t delta_num = digit_roll(
+        int8_t delta_num = digit_roll(
             &numberflow->digits[i],
             num + rolling_offset * numberflow->digits[i].modulus,
             rolling_dir,
@@ -879,16 +925,18 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
             anim_time
         );
 
-        if (delta_num != 0) {
-            if (rolling_offset == 0) {
-                /*Only update rolling offset when all higher-position did't changed*/
-                if (delta_num > 0) {
-                    rolling_dir = 1;
+        if (numberflow->dir == LV_NUMBERFLOW_DIR_CONTINUOUS) {
+            if (delta_num != 0) {
+                if (rolling_offset == 0) {
+                    /*Only update rolling offset when all higher-position did't changed*/
+                    if (delta_num > 0) {
+                        rolling_dir = 1;
+                    }
+                    else if (delta_num < 0) {
+                        rolling_dir = -1;
+                    }
+                    rolling_offset = rolling_dir;
                 }
-                else if (delta_num < 0) {
-                    rolling_dir = -1;
-                }
-                rolling_offset = rolling_dir;
             }
         }
     }

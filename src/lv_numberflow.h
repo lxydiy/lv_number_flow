@@ -30,6 +30,20 @@ extern "C" {
  *      TYPEDEFS
  **********************/
 
+enum {
+    LV_NUMBERFLOW_MODE_NORMAL,          /** flow from bottom to top means increasing*/
+    LV_NUMBERFLOW_MODE_REVERSE,         /** same as normal but flow down for increasing*/
+};
+typedef uint8_t lv_numberflow_mode_t;
+
+enum {
+    LV_NUMBERFLOW_DIR_CONTINUOUS,       /** low-order digits follow the high-order digits*/
+    LV_NUMBERFLOW_DIR_NEAREST,          /** digits flow to the direction of the shortest flow distance*/
+    LV_NUMBERFLOW_DIR_INCREASE,         /** force every digit to flow to larger number and loop if needed*/
+    LV_NUMBERFLOW_DIR_DECREASE          /** force every digit to flow to smaller number and loop if needed*/
+};
+typedef uint8_t lv_numberflow_dir_t;
+
 typedef struct {
     int16_t ofs_x;              /**< X offset from origin to image top-left*/
     int16_t ofs_y;              /**< Y offset from origin to image top-left*/
@@ -92,14 +106,16 @@ typedef struct {
 
 typedef struct {
     lv_obj_t obj;
+    lv_numberflow_mode_t mode;
+    lv_numberflow_dir_t dir;
     lv_anim_path_cb_t anim_path_flow;
     lv_anim_path_cb_t anim_path_size;
 
     const lv_numberflow_blur_data_t *blur_data;
 
     int32_t value;              /**< Last value set by lv_numberflow_set_value*/
-    uint8_t digit_count;        /**< Total digit count allocated*/
-    uint8_t visible_digit_cnt_prev;   /**< Visible digits after last number change*/
+    int8_t digit_count;        /**< Total digit count allocated*/
+    int8_t visible_digit_cnt_prev;   /**< Visible digits after last number change*/
     _lv_nf_digit_t *digits;     /**< Array of digits descriptions, [0] is the one's place*/
 
     _lv_nf_anim_dsc_t x_ofs;    /**< X offset animation of widget*/
@@ -139,6 +155,20 @@ lv_obj_t * lv_numberflow_create(lv_obj_t * parent);
  * @param anim      LV_ANIM_ON: set the value with an animation; LV_ANIM_OFF: change the value immediately
  */
 void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t anim);
+
+/**
+ * Set the mode of numberflow
+ * @param obj       pointer to a numberflow object
+ * @param mode      numberflow mode from ::lv_numberflow_mode_t
+ */
+void lv_numberflow_set_mode(lv_obj_t * obj, lv_numberflow_mode_t mode);
+
+/**
+ * Set the direction of numberflow
+ * @param obj       pointer to a numberflow object
+ * @param dir       direction from ::lv_numberflow_dir_t
+ */
+void lv_numberflow_set_dir(lv_obj_t * obj, lv_numberflow_dir_t dir);
 
 /**
  * Set a new animation path callback for numbers flowing
