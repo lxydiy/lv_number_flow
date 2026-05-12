@@ -333,8 +333,8 @@ static void draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx,
 
         const lv_nf_glyph_blur_dsc_t *blur = get_blur(numberflow, num_draw_dsc->num, num_draw_dsc->blur_level);
 
-        coords.x1 = coords.x1 + num_draw_dsc->x + blur->ofs_x + ((num_draw_dsc->curr_width - width + 1) / 2);
-        coords.y1 = coords.y1 + num_draw_dsc->y + numberflow->blur_data->line_height + blur->ofs_y;
+        coords.x1 = coords.x1 + num_draw_dsc->x + blur->ofs_x + (num_draw_dsc->curr_width - width + 1) / 2;
+        coords.y1 = coords.y1 + num_draw_dsc->y + blur->ofs_y;
         coords.x2 = coords.x1 + blur->box_w - 1;
         coords.y2 = coords.y1 + blur->box_h - 1;
 
