@@ -426,7 +426,7 @@ static uint16_t layout_digit(_lv_nf_digit_t *digit, lv_coord_t x)
         upper_opa = LV_OPA_COVER - lower_opa;
     }
 
-    int8_t blur_pos;
+    int8_t blur_pos = 0;
     if (numberflow->blur_data != NULL) {
         /*Calculate blur based on flowing position difference*/
         if (value != LV_NUMBERFLOW_ANIM_STATE_END) {
