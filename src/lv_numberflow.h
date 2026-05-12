@@ -115,7 +115,6 @@ typedef struct {
 
     int32_t value;              /**< Last value set by lv_numberflow_set_value*/
     int8_t digit_count;        /**< Total digit count allocated*/
-    int8_t visible_digit_cnt_prev;   /**< Visible digits after last number change*/
     _lv_nf_digit_t *digits;     /**< Array of digits descriptions, [0] is the one's place*/
 
     _lv_nf_anim_dsc_t x_ofs;    /**< X offset animation of widget*/

@@ -126,8 +126,6 @@ void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t ani
     LV_ASSERT_OBJ(obj, MY_CLASS);
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
 
-    if(numberflow->value == value) return;
-    numberflow->value = value;
     lv_numberflow_set_value_with_anim(obj, value, anim);
 }
 
@@ -246,7 +244,6 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     numberflow->value = -1;
 
     numberflow->digit_count = 0;
-    numberflow->visible_digit_cnt_prev = 0;
     numberflow->digits = NULL;
 
     numberflow->width.begin = 0;
@@ -553,11 +550,9 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
         numberflow->width.curr = p->x;
         p->y = numberflow->height;
     }
-    else if (code == LV_EVENT_STYLE_CHANGED)
-    {
+    else if (code == LV_EVENT_STYLE_CHANGED) {
         recalculate_style(numberflow);
     }
-
     else if(code == LV_EVENT_DRAW_MAIN) {
         layout_numberflow(numberflow);
         draw_numberflow(e);
@@ -705,7 +700,6 @@ static bool digit_realloc(lv_numberflow_t *numberflow, int8_t front, int8_t back
     numberflow->digits = lv_mem_realloc(numberflow->digits, new_count * sizeof(_lv_nf_digit_t));
     if (numberflow->digits == NULL) {
         numberflow->digit_count = 0;
-        numberflow->visible_digit_cnt_prev = 0;
         return false;
     }
 
@@ -818,7 +812,9 @@ static int8_t digit_roll(_lv_nf_digit_t* digit, int8_t target_num, int8_t direct
 static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value, lv_anim_enable_t en)
 {
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+    if(numberflow->value == new_value) return;
 
+    int32_t target = new_value;
     int8_t nums[LV_NUMBERFLOW_MAX_DIGITS] = {0};
     int8_t front;
     int8_t visible_digit_cnt = 0;
@@ -832,12 +828,12 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     }
 
     /*Only supports displaying positive numbers here*/
-    if (new_value < 0) new_value = -new_value;
-    if (new_value == 0)
-        visible_digit_cnt = 1;
-    while (new_value > 0) {
-        nums[visible_digit_cnt] = new_value % 10;
-        new_value /= 10;
+    if (target < 0) target = -target;
+    else if (target == 0) visible_digit_cnt = 1;
+
+    while (target > 0) {
+        nums[visible_digit_cnt] = target % 10;
+        target /= 10;
         visible_digit_cnt++;
     }
 
@@ -878,10 +874,10 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     if (numberflow->dir == LV_NUMBERFLOW_DIR_CONTINUOUS) {
         /*First, if visible digits count changed, we should force rolling direction.
         * For example: 999 -> 1000 or 123 -> 12*/
-        if (visible_digit_cnt > numberflow->visible_digit_cnt_prev) {
+        if (new_value > numberflow->value) {
             rolling_dir = 1;
         }
-        else if (visible_digit_cnt < numberflow->visible_digit_cnt_prev) {
+        else {
             rolling_dir = -1;
         }
     }
@@ -909,10 +905,12 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
 
         if (numberflow->dir == LV_NUMBERFLOW_DIR_CONTINUOUS) {
             if (rolling_dir == 0) {
-                if (num > numberflow->digits[i].last_num)
+                if (num > numberflow->digits[i].last_num) {
                     rolling_dir = 1;
-                else if (num < numberflow->digits[i].last_num)
+                }
+                else if (num < numberflow->digits[i].last_num) {
                     rolling_dir = -1;
+                }
             }
         }
 
@@ -941,7 +939,7 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
         }
     }
 
-    numberflow->visible_digit_cnt_prev = visible_digit_cnt;
+    numberflow->value = new_value;
 
     /*Size Animation*/
     if(anim_time == 0) {
@@ -974,5 +972,4 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
             lv_anim_start(&a);
         }
     }
-    numberflow->visible_digit_cnt_prev = visible_digit_cnt;
 }
