@@ -19,19 +19,19 @@
 #define LV_NUMBERFLOW_ANIM_STATE_START 0
 
 /** Numberflow animation end value.  (Not the real value just indicates process animation)*/
-#define LV_NUMBERFLOW_ANIM_STATE_END   256
+#define LV_NUMBERFLOW_ANIM_STATE_END   16384
 
 /** Mark no animation is in progress*/
 #define LV_NUMBERFLOW_ANIM_STATE_INV   -1
 
 /** log2(LV_NUMBERFLOW_ANIM_STATE_END) used to normalize data*/
-#define LV_NUMBERFLOW_ANIM_STATE_NORM  8
+#define LV_NUMBERFLOW_ANIM_STATE_NORM  14
 
 /** maximum value in number_flow_ease_lut*/
-#define LV_NUMBERFLOW_ANIM_RESOLUTION 1024
+#define LV_NUMBERFLOW_ANIM_RESOLUTION 16384
 
 /** log2(LV_NUMBERFLOW_ANIM_RESOLUTION) used to normalize data*/
-#define LV_NUMBERFLOW_ANIM_RES_SHIFT 10
+#define LV_NUMBERFLOW_ANIM_RES_SHIFT 14
 
 /** Element count of number_flow_ease_lut*/
 #define LV_NUMBERFLOW_ANIM_LUT_SIZE 90
@@ -69,12 +69,12 @@ const lv_obj_class_t lv_numberflow_class = {
  *  animation curve is used. This animation curve below is mapped from:
  *  https://github.com/barvian/number-flow/blob/7ab1a7164ef1b088267f789b07581fefef064b68/packages/number-flow/src/lite.ts#L73 */
 static const uint16_t number_flow_ease_lut[LV_NUMBERFLOW_ANIM_LUT_SIZE] = {
-    0,     5,    19,    40,    68,    98,   132,   169,   207,   246,   285,   324,   362,   399,   436,   472,
-  506,   539,   570,   600,   629,   655,   681,   706,   728,   749,   769,   787,   805,   821,   837,   851,
-  864,   877,   888,   898,   908,   918,   926,   934,   941,   947,   953,   959,   965,   970,   974,   978,
-  982,   985,   988,   991,   994,   996,   999,  1001,  1004,  1005,  1007,  1008,  1010,  1011,  1012,  1013,
- 1014,  1015,  1016,  1016,  1017,  1018,  1018,  1019,  1019,  1020,  1020,  1020,  1021,  1021,  1021,  1021,
- 1022,  1022,  1022,  1022,  1022,  1022,  1023,  1023,  1023,  1024
+      0,     82,    311,    639,   1081,   1573,   2114,   2703,   3310,   3932,   4555,   5177,   5800,   6390,   6980,   7553,
+   8094,   8618,   9126,   9601,  10060,  10486,  10895,  11289,  11649,  11977,  12304,  12599,  12878,  13140,  13386,  13615,
+  13828,  14025,  14205,  14369,  14533,  14680,  14811,  14942,  15057,  15155,  15254,  15352,  15434,  15516,  15581,  15647,
+  15712,  15761,  15811,  15860,  15909,  15942,  15991,  16024,  16056,  16073,  16105,  16122,  16155,  16171,  16187,  16204,
+  16220,  16237,  16253,  16253,  16269,  16286,  16286,  16302,  16302,  16318,  16318,  16323,  16330,  16333,  16338,  16343,
+  16346,  16350,  16353,  16355,  16358,  16359,  16363,  16364,  16366,  16384
 };
 
 /**********************
