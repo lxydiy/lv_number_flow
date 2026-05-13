@@ -387,6 +387,18 @@ static inline const lv_nf_glyph_blur_dsc_t *get_blur(lv_numberflow_t *numberflow
     return &numberflow->blur_data->blurs[num * blur_level_max + blur_level];
 }
 
+static inline bool digit_has_decimal_sep(lv_numberflow_t *numberflow, int8_t idx)
+{
+    return idx == numberflow->ones_place_idx + 1;
+}
+
+static inline bool digit_has_thousand_sep(lv_numberflow_t *numberflow, int8_t idx)
+{
+    int8_t integer_pos = numberflow->ones_place_idx - idx;
+    if (integer_pos <= 0) return false;
+    return integer_pos % 3 == 0 && numberflow->ksep != '\0';
+}
+
 static void draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx,
                         _lv_nf_number_draw_dsc_t *num_draw_dsc)
 {
@@ -467,7 +479,7 @@ static void draw_numberflow(lv_event_t * e)
 
     for (int32_t i = 0; i < numberflow->digit_count; i++)
     {
-        if (i == numberflow->ones_place_idx + 1 && numberflow->dsep != '\0') {
+        if (digit_has_decimal_sep(numberflow, i)) {
             /*Decimal separator's animation is bound to the first decimal digit*/
             lv_point_t pos_rel;
             pos_rel.x = numberflow->digits[i].draw[0].x - numberflow->letter_space - get_glyph_width(numberflow, numberflow->dsep);
@@ -476,6 +488,13 @@ static void draw_numberflow(lv_event_t * e)
         }
         draw_number(numberflow, ctx, &numberflow->digits[i].draw[0]);
         draw_number(numberflow, ctx, &numberflow->digits[i].draw[1]);
+        if (digit_has_thousand_sep(numberflow, i)) {
+            /*Thousand separator's animation is bound to the integer digit before it*/
+            lv_point_t pos_rel;
+            pos_rel.x = numberflow->digits[i].draw[0].x + numberflow->digits[i].draw[0].curr_width + numberflow->letter_space;
+            pos_rel.y = 0;
+            draw_glyph(numberflow, ctx, &pos_rel, numberflow->digits[i].opa.curr, numberflow->ksep);
+        }
     }
 }
 
@@ -596,13 +615,18 @@ static void layout_numberflow(lv_numberflow_t *numberflow)
     /*We need to count invisible digits's width*/
     for (int32_t i = 0; i < numberflow->digit_count; i++)
     {
-        if (i == numberflow->ones_place_idx + 1 && numberflow->dsep != '\0') {
-            /*Decimal point is bind to the 1/2's place number*/
+        if (digit_has_decimal_sep(numberflow, i)) {
+            /*Decimal separator's animation is bound to the first decimal digit*/
             x_ofs += get_glyph_width(numberflow, numberflow->dsep);
             x_ofs += numberflow->letter_space;
         }
         x_ofs += layout_digit(&numberflow->digits[i], x_ofs);
         x_ofs += numberflow->letter_space;
+        if (digit_has_thousand_sep(numberflow, i)) {
+            /*Thousand separator's animation is bound to the integer digit before it*/
+            x_ofs += get_glyph_width(numberflow, numberflow->ksep);
+            x_ofs += numberflow->letter_space;
+        }
     }
 }
 
@@ -617,7 +641,7 @@ static void recalculate_style(lv_numberflow_t *numberflow)
     lv_coord_t letter_space = lv_obj_get_style_text_letter_space(obj, LV_PART_MAIN);
 
     if (numberflow->blur_data != NULL) {
-        height = numberflow->blur_data->line_height;
+        height = LV_MAX(numberflow->blur_data->line_height, lv_font_get_line_height(font));
     }
     else {
         height = lv_font_get_line_height(font);
@@ -980,27 +1004,33 @@ static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t 
     int8_t last_visible_idx = first_visible_idx + visible_digit_count - 1;
 
     uint16_t width0 = get_glyph_width(numberflow, '0');
-    uint16_t width_ksep = get_glyph_width(numberflow, numberflow->ksep);
-    uint16_t width_dsep = get_glyph_width(numberflow, numberflow->dsep);
+    uint16_t width_ksep = get_glyph_width(numberflow, numberflow->ksep) + numberflow->letter_space;
+    uint16_t width_dsep = get_glyph_width(numberflow, numberflow->dsep) + numberflow->letter_space;
     int8_t ksep_cnt = (int_cnt - 1) / 3;
     int8_t dsep_cnt = dec_cnt > 0 ? 1 : 0;
     lv_coord_t width = numberflow->letter_space * (visible_digit_count + dsep_cnt - 1);
     for (int8_t i = first_visible_idx; i <= last_visible_idx; i++) {
         width += get_glyph_width(numberflow, nums[i - first_visible_idx] + '0');
     }
-    width += width_ksep * ksep_cnt + width_dsep * dsep_cnt;
-    if (width_ksep > 0) {
-        width += ksep_cnt * numberflow->letter_space;
+    width += width_dsep * dsep_cnt;
+    if (numberflow->ksep != '\0') {
+        width += ksep_cnt * width_ksep;
     }
 
-    /*Start x_offset should minus newly added zeros' width plus new thousand separators' width*/
-    lv_coord_t x_offset_start_delta = -(front * (width0 + numberflow->letter_space));
     /*End x_offset should be the width of invisible zeros on the left plus their thousand separator's width*/
     int8_t inv_zeros = first_visible_idx;
     int8_t inv_kseps = (int_space - 1) / 3 - ksep_cnt;
-    lv_coord_t x_offset_end = -(inv_zeros * width0 + inv_kseps * width_ksep + inv_zeros * numberflow->letter_space);
-    if (width_ksep > 0) {
-        x_offset_end += -(inv_kseps * numberflow->letter_space);
+    lv_coord_t x_offset_end = -inv_zeros * (width0 + numberflow->letter_space);
+    if (numberflow->ksep != '\0') {
+        x_offset_end -= inv_kseps * width_ksep;
+    }
+    /*Start x_offset should minus newly added zeros' width plus new thousand separators' width.
+    * Note that x_offset should always be negative as it's used to move invisible digits
+    * on the left out of widget, but keep them in place to make animation continuous*/
+    lv_coord_t x_offset_start_delta = -front * (width0 + numberflow->letter_space);
+    int8_t new_kseps = inv_kseps - ((int_space - 1 - front) / 3 - ksep_cnt);
+    if (numberflow->ksep != '\0') {
+        x_offset_start_delta -= new_kseps * width_ksep;
     }
 
     /*Calculate number offsets, accumulating results*/
