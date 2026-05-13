@@ -49,8 +49,8 @@ static int32_t lv_numberflow_ease_curve(const lv_anim_t * anim);
 static void reset_animations(lv_numberflow_t *numberflow);
 static void recalculate_style(lv_numberflow_t *numberflow);
 static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e);
-static uint16_t get_number_width(lv_numberflow_t *numberflow, uint8_t number);
-static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value, lv_anim_enable_t en);
+static uint16_t get_glyph_width(lv_numberflow_t *numberflow, char glyph);
+static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t int_cnt, int8_t dec_cnt, int8_t trend, lv_anim_enable_t en);
 
 /**********************
  *  STATIC VARIABLES
@@ -126,7 +126,76 @@ void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t ani
     LV_ASSERT_OBJ(obj, MY_CLASS);
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
 
-    lv_numberflow_set_value_with_anim(obj, value, anim);
+    int8_t trend;
+    if (value > numberflow->value) {
+        trend = 1;
+    }
+    else if (value < numberflow->value) {
+        trend = -1;
+    }
+    else {
+        trend = 0;
+    }
+
+    char nums[LV_NUMBERFLOW_MAX_DIGITS];
+    lv_memset_00(nums, sizeof(nums));
+
+    int8_t nums_idx = 0;
+    int32_t target = value;
+    while (target > 0) {
+        nums[nums_idx++] = target % 10;
+        target /= 10;
+    }
+
+    /*Reverse nums array*/
+    for (int8_t i = 0; i < (nums_idx + 1) / 2; i++) {
+        int8_t peer = nums_idx - 1 - i;
+        int8_t t;
+        t = nums[i];
+        nums[i] = nums[peer];
+        nums[peer] = t;
+    }
+
+    int8_t int_cnt;
+    if (numberflow->integer_fix > 0) {
+        int_cnt = numberflow->integer_fix;
+    }
+    else {
+        int_cnt = nums_idx - numberflow->decimal_fix;
+        if (int_cnt < 1) {
+            int_cnt = 1;
+        }
+    }
+
+    int8_t pad = int_cnt + numberflow->decimal_fix - nums_idx;
+    if (pad > 0) {
+        for (int8_t i = nums_idx - 1; i >= 0; i--) {
+            nums[i + pad] = nums[i];
+        }
+        for (int8_t i = 0; i < pad; i++) {
+            nums[i] = 0;
+        }
+        nums_idx += pad;
+    }
+
+    /*Make sure we have at least 1 digit to process*/
+    if (nums_idx == 0) nums_idx = 1;
+
+    /*Trim decimal zeros*/
+    int8_t dec_cnt = numberflow->decimal_fix;
+    if (numberflow->trim_decimal) {
+        for (int8_t i = nums_idx - 1; i >= nums_idx - numberflow->decimal_fix; i--) {
+            if (nums[i] == 0) {
+                dec_cnt--;
+            }
+            else {
+                break;
+            }
+        }
+    }
+
+    lv_numberflow_update_with_anim(obj, nums, int_cnt, dec_cnt, trend, anim);
+    numberflow->value = value;
 }
 
 void lv_numberflow_set_mode(lv_obj_t * obj, lv_numberflow_mode_t mode)
@@ -230,9 +299,15 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
 
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
     numberflow->mode = LV_NUMBERFLOW_MODE_NORMAL;
-    numberflow->dir = LV_NUMBERFLOW_DIR_CONTINUOUS;
+    numberflow->dir = LV_NUMBERFLOW_DIR_DEFAULT;
     numberflow->anim_path_flow = lv_numberflow_ease_curve;
     numberflow->anim_path_size = lv_anim_path_ease_out;
+    numberflow->integer_fix = 0;
+    numberflow->decimal_fix = 0;
+    numberflow->trim_decimal = false;
+    numberflow->ksep = '\0';
+    numberflow->dsep = '.';
+    numberflow->fade = false;
     numberflow->blur_data = NULL;
 
     numberflow->line_space = lv_obj_get_style_text_line_space(obj, 0);
@@ -241,10 +316,13 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     numberflow->number_height = numberflow->height + numberflow->line_space;
     lv_memset_00(numberflow->x_adv, sizeof(numberflow->x_adv));
 
-    numberflow->value = -1;
+    numberflow->value = 0;
 
     numberflow->digit_count = 0;
+    numberflow->int_cnt = 0;
+    numberflow->dec_cnt = 0;
     numberflow->digits = NULL;
+    numberflow->ones_place_idx = -1;
 
     numberflow->width.begin = 0;
     numberflow->width.curr = 0;
@@ -313,7 +391,7 @@ static void draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx,
                         _lv_nf_number_draw_dsc_t *num_draw_dsc)
 {
     lv_obj_t *obj = (lv_obj_t *)numberflow;
-    uint16_t width = get_number_width(numberflow, num_draw_dsc->num);
+    uint16_t width = get_glyph_width(numberflow, num_draw_dsc->num + '0');
     lv_color_t color = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
 
     if (num_draw_dsc->opa == LV_OPA_TRANSP) return;
@@ -359,6 +437,27 @@ static void draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx,
     }
 }
 
+static void draw_glyph(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx,
+                        lv_point_t *pos_rel, lv_opa_t opa, const char glyph)
+{
+    lv_obj_t *obj = (lv_obj_t *)numberflow;
+    lv_color_t color = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
+    lv_draw_label_dsc_t label_dsc;
+    lv_draw_label_dsc_init(&label_dsc);
+    label_dsc.color = color;
+    label_dsc.font = numberflow->font;
+    label_dsc.opa = opa;
+
+    lv_point_t pos;
+    lv_area_t coords;
+    lv_obj_get_content_coords(obj, &coords);
+
+    pos.x = coords.x1 + pos_rel->x;
+    pos.y = coords.y1 + pos_rel->y;
+
+    lv_draw_letter(draw_ctx, &label_dsc, &pos, glyph);
+}
+
 static void draw_numberflow(lv_event_t * e)
 {
     lv_obj_t * obj = lv_event_get_target(e);
@@ -368,6 +467,13 @@ static void draw_numberflow(lv_event_t * e)
 
     for (int32_t i = 0; i < numberflow->digit_count; i++)
     {
+        if (i == numberflow->ones_place_idx + 1 && numberflow->dsep != '\0') {
+            /*Decimal separator's animation is bound to the first decimal digit*/
+            lv_point_t pos_rel;
+            pos_rel.x = numberflow->digits[i].draw[0].x - numberflow->letter_space - get_glyph_width(numberflow, numberflow->dsep);
+            pos_rel.y = 0;
+            draw_glyph(numberflow, ctx, &pos_rel, numberflow->digits[i].opa.curr, numberflow->dsep);
+        }
         draw_number(numberflow, ctx, &numberflow->digits[i].draw[0]);
         draw_number(numberflow, ctx, &numberflow->digits[i].draw[1]);
     }
@@ -410,8 +516,14 @@ static uint16_t layout_digit(_lv_nf_digit_t *digit, lv_coord_t x)
         lower_num = (upper_num + 1) % digit->modulus;
         lower_off = upper_off + height;
 
-        upper_opa = MAP(upper_off, 0, -height, LV_OPA_COVER, LV_OPA_TRANSP);
-        lower_opa = LV_OPA_COVER - upper_opa;
+        if (numberflow->fade) {
+            upper_opa = MAP(upper_off, 0, -height, LV_OPA_COVER, LV_OPA_TRANSP);
+            lower_opa = LV_OPA_COVER - upper_opa;
+        }
+        else {
+            lower_opa = LV_OPA_COVER;
+            upper_opa = LV_OPA_COVER;
+        }
     }
     else {
         lower_num = center_mod / height;
@@ -419,8 +531,14 @@ static uint16_t layout_digit(_lv_nf_digit_t *digit, lv_coord_t x)
         upper_num = (lower_num + 1) % digit->modulus;
         upper_off = lower_off - height;
 
-        lower_opa = MAP(lower_off, 0, height, LV_OPA_COVER, LV_OPA_TRANSP);
-        upper_opa = LV_OPA_COVER - lower_opa;
+        if (numberflow->fade) {
+            lower_opa = MAP(lower_off, 0, height, LV_OPA_COVER, LV_OPA_TRANSP);
+            upper_opa = LV_OPA_COVER - lower_opa;
+        }
+        else {
+            lower_opa = LV_OPA_COVER;
+            upper_opa = LV_OPA_COVER;
+        }
     }
 
     int8_t blur_pos = 0;
@@ -478,6 +596,11 @@ static void layout_numberflow(lv_numberflow_t *numberflow)
     /*We need to count invisible digits's width*/
     for (int32_t i = 0; i < numberflow->digit_count; i++)
     {
+        if (i == numberflow->ones_place_idx + 1 && numberflow->dsep != '\0') {
+            /*Decimal point is bind to the 1/2's place number*/
+            x_ofs += get_glyph_width(numberflow, numberflow->dsep);
+            x_ofs += numberflow->letter_space;
+        }
         x_ofs += layout_digit(&numberflow->digits[i], x_ofs);
         x_ofs += numberflow->letter_space;
     }
@@ -620,7 +743,7 @@ static void anim_digit_start(lv_anim_t * a)
     digit->anim.updated = true;
 
     /*Update digit width*/
-    int16_t width = get_number_width(numberflow, digit->last_num);
+    int16_t width = get_glyph_width(numberflow, digit->last_num + '0');
     ANIM_UPDATE(digit->width, width);
 
     /*Update digit opacity*/
@@ -650,15 +773,26 @@ static void anim_size_ready(lv_anim_t * a)
     lv_obj_refresh_self_size(obj);
 }
 
-static uint16_t get_number_width(lv_numberflow_t *numberflow, uint8_t number)
+static uint16_t get_glyph_width(lv_numberflow_t *numberflow, char glyph)
 {
-    if (numberflow->blur_data != NULL) {
-        return numberflow->blur_data->x_adv[number];
+    if (glyph == '\0') return 0;
+    if (glyph >= '0' && glyph <= '9') {
+        /*Use cache to speed up layout as Arabic numerals don't require kerning,
+        * especially for mono fonts, which is recommended to use in this widget.
+        * Use '0' as letter_next because next letter is a number*/
+        if (numberflow->blur_data != NULL) {
+            return numberflow->blur_data->x_adv[glyph - '0'];
+        }
+        else {
+            if (numberflow->x_adv[glyph - '0'] != 0) return numberflow->x_adv[glyph - '0'];
+            uint16_t width = lv_font_get_glyph_width(numberflow->font, glyph, '0');
+            numberflow->x_adv[glyph - '0'] = width;
+            return width;
+        }
     }
     else {
-        if (numberflow->x_adv[number] != 0) return numberflow->x_adv[number];
-        uint16_t width = lv_font_get_glyph_width(numberflow->font, number + '0', '\0');
-        numberflow->x_adv[number] = width;
+        /*Fall back to lv_font's get width.*/
+        uint16_t width = lv_font_get_glyph_width(numberflow->font, glyph, '0');
         return width;
     }
 }
@@ -666,7 +800,7 @@ static uint16_t get_number_width(lv_numberflow_t *numberflow, uint8_t number)
 static void reset_animations(lv_numberflow_t *numberflow)
 {
     if (numberflow->digit_count != 0) {
-        lv_numberflow_set_value_with_anim((lv_obj_t *)numberflow, numberflow->value, LV_ANIM_OFF);
+        lv_numberflow_set_value((lv_obj_t *)numberflow, numberflow->value, LV_ANIM_OFF);
     }
 }
 
@@ -676,7 +810,7 @@ static void digit_init(lv_numberflow_t *numberflow, _lv_nf_digit_t *digit)
     digit->modulus = 10;
     digit->anim.updated = true;
     digit->anim.numberflow = (lv_obj_t *)numberflow;
-    uint16_t width0 = get_number_width(numberflow, 0);
+    uint16_t width0 = get_glyph_width(numberflow, '0');
     ANIM_UPDATE_STOP(digit->width, width0);
 }
 
@@ -724,6 +858,7 @@ static bool digit_realloc(lv_numberflow_t *numberflow, int8_t front, int8_t back
     }
 
     numberflow->digit_count = new_count;
+    numberflow->ones_place_idx += front;
     return true;
 }
 
@@ -773,7 +908,7 @@ static int8_t digit_roll(_lv_nf_digit_t* digit, int8_t target_num, int8_t direct
         digit->last_flow = end_px;
 
         digit->last_num = (target_num + digit->modulus) % digit->modulus;
-        int16_t width = get_number_width(numberflow, digit->last_num);
+        int16_t width = get_glyph_width(numberflow, digit->last_num + '0');
 
         ANIM_UPDATE_STOP(digit->opa, target_opa);
         ANIM_UPDATE_STOP(digit->width, width);
@@ -809,17 +944,11 @@ static int8_t digit_roll(_lv_nf_digit_t* digit, int8_t target_num, int8_t direct
     return target_num - last_num;
 }
 
-static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value, lv_anim_enable_t en)
+static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t int_cnt, int8_t dec_cnt, int8_t trend, lv_anim_enable_t en)
 {
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
-    if(numberflow->value == new_value) return;
 
-    int32_t target = new_value;
-    int8_t nums[LV_NUMBERFLOW_MAX_DIGITS] = {0};
-    int8_t front;
-    int8_t visible_digit_cnt = 0;
     uint32_t anim_time;
-
     if(en == LV_ANIM_OFF) {
         anim_time = 0;
     }
@@ -827,59 +956,59 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
         anim_time = lv_obj_get_style_anim_time(obj, LV_PART_MAIN);
     }
 
-    /*Only supports displaying positive numbers here*/
-    if (target < 0) target = -target;
-    else if (target == 0) visible_digit_cnt = 1;
-
-    while (target > 0) {
-        nums[visible_digit_cnt] = target % 10;
-        target /= 10;
-        visible_digit_cnt++;
-    }
-
-    // TODO: implement digit alignment
-    front = visible_digit_cnt - numberflow->digit_count;
-    if (front > 0) {
-        digit_realloc(numberflow, front, 0);
-        if (numberflow->digit_count == 0) return;
+    /*Calculate new digits to be allocated before and after current digits*/
+    int8_t int_space = numberflow->ones_place_idx + 1;
+    int8_t dec_space = numberflow->digit_count - int_space;
+    int8_t front, back;
+    if (numberflow->digit_count == 0) {
+        front = int_cnt;
+        back = dec_cnt;
     }
     else {
-        front = 0;  /*Digit count didn't change*/
+        front = int_cnt - int_space;
+        back = dec_cnt - dec_space;
+    }
+    if (front < 0) front = 0;
+    if (back < 0) back = 0;
+
+    if (!digit_realloc(numberflow, front, back)) return;
+    int_space = numberflow->ones_place_idx + 1;
+    dec_space = numberflow->digit_count - int_space;
+
+    int8_t visible_digit_count = int_cnt + dec_cnt;
+    int8_t first_visible_idx = int_space - int_cnt;
+    int8_t last_visible_idx = first_visible_idx + visible_digit_count - 1;
+
+    uint16_t width0 = get_glyph_width(numberflow, '0');
+    uint16_t width_ksep = get_glyph_width(numberflow, numberflow->ksep);
+    uint16_t width_dsep = get_glyph_width(numberflow, numberflow->dsep);
+    int8_t ksep_cnt = (int_cnt - 1) / 3;
+    int8_t dsep_cnt = dec_cnt > 0 ? 1 : 0;
+    lv_coord_t width = numberflow->letter_space * (visible_digit_count + dsep_cnt - 1);
+    for (int8_t i = first_visible_idx; i <= last_visible_idx; i++) {
+        width += get_glyph_width(numberflow, nums[i - first_visible_idx] + '0');
+    }
+    width += width_ksep * ksep_cnt + width_dsep * dsep_cnt;
+    if (width_ksep > 0) {
+        width += ksep_cnt * numberflow->letter_space;
     }
 
-    /*align nums with digits*/
-    for (int8_t i = 0; i < (numberflow->digit_count + 1) / 2; i++) {
-        int8_t peer = numberflow->digit_count - 1 - i;
-        int8_t t;
-        t = nums[i];
-        nums[i] = nums[peer];
-        nums[peer] = t;
+    /*Start x_offset should minus newly added zeros' width plus new thousand separators' width*/
+    lv_coord_t x_offset_start_delta = -(front * (width0 + numberflow->letter_space));
+    /*End x_offset should be the width of invisible zeros on the left plus their thousand separator's width*/
+    int8_t inv_zeros = first_visible_idx;
+    int8_t inv_kseps = (int_space - 1) / 3 - ksep_cnt;
+    lv_coord_t x_offset_end = -(inv_zeros * width0 + inv_kseps * width_ksep + inv_zeros * numberflow->letter_space);
+    if (width_ksep > 0) {
+        x_offset_end += -(inv_kseps * numberflow->letter_space);
     }
-
-    lv_coord_t width_end = numberflow->letter_space * (numberflow->digit_count - 1);
-    lv_coord_t x_offset_start_delta = 0;
-    lv_coord_t x_offset_end = 0;
-    uint16_t width0 = get_number_width(numberflow, 0);
-
-    x_offset_start_delta = -front * width0;
-    for (int8_t i = numberflow->digit_count - visible_digit_cnt; i < numberflow->digit_count; ++i) {
-        width_end += get_number_width(numberflow, nums[i]);
-    }
-    x_offset_end = -((numberflow->digit_count - visible_digit_cnt) * width0);
 
     /*Calculate number offsets, accumulating results*/
     int8_t rolling_offset = 0;
 
     int8_t rolling_dir;
-    if (numberflow->dir == LV_NUMBERFLOW_DIR_CONTINUOUS) {
-        /*First, if visible digits count changed, we should force rolling direction.
-        * For example: 999 -> 1000 or 123 -> 12*/
-        if (new_value > numberflow->value) {
-            rolling_dir = 1;
-        }
-        else {
-            rolling_dir = -1;
-        }
+    if (numberflow->dir == LV_NUMBERFLOW_DIR_DEFAULT || numberflow->dir == LV_NUMBERFLOW_DIR_CONTINUOUS) {
+        rolling_dir = trend;
     }
     else if (numberflow->dir == LV_NUMBERFLOW_DIR_INCREASE) {
         rolling_dir = 1;
@@ -895,13 +1024,14 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
         lv_opa_t opacity;
         int8_t num;
         // TODO: implement digit alignment
-        if (i < numberflow->digit_count - visible_digit_cnt) {
+        if (i < first_visible_idx || i > last_visible_idx) {
             opacity = LV_OPA_TRANSP;
+            num = 0;
         }
         else {
             opacity = LV_OPA_COVER;
+            num = nums[i - first_visible_idx];
         }
-        num = nums[i];
 
         if (numberflow->dir == LV_NUMBERFLOW_DIR_CONTINUOUS) {
             if (rolling_dir == 0) {
@@ -939,11 +1069,11 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
         }
     }
 
-    numberflow->value = new_value;
-
     /*Size Animation*/
     if(anim_time == 0) {
-        ANIM_UPDATE_STOP(numberflow->width, width_end);
+        numberflow->int_cnt = int_cnt;
+        numberflow->dec_cnt = dec_cnt;
+        ANIM_UPDATE_STOP(numberflow->width, width);
         ANIM_UPDATE_STOP(numberflow->x_ofs, x_offset_end);
         lv_anim_del(obj, anim_size);
         numberflow->anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
@@ -952,10 +1082,14 @@ static void lv_numberflow_set_value_with_anim(lv_obj_t * obj, int32_t new_value,
     }
     else {
         /*For non-monospace fonts, only update animation when width increase or digit
-        * count change, to prevent animation stuck at one place when fast updating.
+        * count change, or x_offset change, to prevent animation stuck at one place when fast updating.
         * For monospace fonts, width will be the same unless digit count change*/
-        if (width_end > numberflow->width.end || x_offset_start_delta != 0 || numberflow->x_ofs.end != x_offset_end) {
-            ANIM_UPDATE(numberflow->width, width_end);
+        if (width > numberflow->width.end
+             || int_cnt != numberflow->int_cnt
+             || dec_cnt != numberflow->dec_cnt) {
+            numberflow->int_cnt = int_cnt;
+            numberflow->dec_cnt = dec_cnt;
+            ANIM_UPDATE(numberflow->width, width);
             /*When a new digit is inserted on the left side, update the starting
             * value of the X offset so that the position of the original digit
             * remains unchanged*/

@@ -37,7 +37,8 @@ enum {
 typedef uint8_t lv_numberflow_mode_t;
 
 enum {
-    LV_NUMBERFLOW_DIR_CONTINUOUS,       /** low-order digits follow the high-order digits*/
+    LV_NUMBERFLOW_DIR_DEFAULT,          /** rolling direction follows the overall trend of value changes, but doesn't consider the relationship between digits*/
+    LV_NUMBERFLOW_DIR_CONTINUOUS,       /** makes the number transitions appear to pass through in-between numbers*/
     LV_NUMBERFLOW_DIR_NEAREST,          /** digits flow to the direction of the shortest flow distance*/
     LV_NUMBERFLOW_DIR_INCREASE,         /** force every digit to flow to larger number and loop if needed*/
     LV_NUMBERFLOW_DIR_DECREASE          /** force every digit to flow to smaller number and loop if needed*/
@@ -61,7 +62,7 @@ typedef struct {
 } lv_numberflow_blur_data_t;
 
 typedef struct {
-    int16_t anim_state;         /**< Animation value passing to draw function*/
+    int32_t anim_state;         /**< Animation value passing to draw function*/
     bool updated;               /**< Animation update flag to recalculate pos and blur*/
     lv_obj_t *numberflow;
 } _lv_nf_anim_state_t;
@@ -110,17 +111,25 @@ typedef struct {
     lv_numberflow_dir_t dir;
     lv_anim_path_cb_t anim_path_flow;
     lv_anim_path_cb_t anim_path_size;
-
+    int8_t integer_fix;           /**< Number of digits before the decimal point. 0 means dynamic length*/
+    int8_t decimal_fix;           /**< Number of digits after the decimal point. 0 means no decimal part*/
+    bool trim_decimal;            /**< Whether to trim trailing zeros after decimal point*/
+    char ksep;                    /**< Thousand separator to use, '\0' means no separator*/
+    char dsep;                    /**< Decimal point to use, can't be '\0'*/
+    bool fade;                    /**< Change the opacity of the upper and lower numbers during the scrolling of numbers*/
     const lv_numberflow_blur_data_t *blur_data;
 
-    int32_t value;              /**< Last value set by lv_numberflow_set_value*/
-    int8_t digit_count;        /**< Total digit count allocated*/
-    _lv_nf_digit_t *digits;     /**< Array of digits descriptions, [0] is the one's place*/
+    int32_t value;                  /**< Last value, used for comparison*/
+    int8_t digit_count;             /**< Count of allocated digits*/
+    int8_t int_cnt;                 /**< Count of visible integer digits*/
+    int8_t dec_cnt;                 /**< Count of visible decimal digits*/
+    _lv_nf_digit_t *digits;         /**< Array of digit descriptors*/
+    int8_t ones_place_idx;          /**< Index of the one's place in digits array*/
 
     _lv_nf_anim_dsc_t x_ofs;    /**< X offset animation of widget*/
     _lv_nf_anim_dsc_t width;    /**< Width animation of widget*/
 
-    int16_t anim_state;         /**< Size animation state*/
+    int32_t anim_state;         /**< Size animation state*/
 
     const lv_font_t *font;
     lv_coord_t height;          /**< The font line height. Also the content height of the widget*/
