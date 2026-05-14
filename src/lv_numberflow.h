@@ -24,7 +24,9 @@ extern "C" {
  *********************/
 
 /** Maximum digits to display. E.g. uint32_t have 10 digits(4_294_967_296)*/
-#define LV_NUMBERFLOW_MAX_DIGITS 10
+#ifndef LV_NUMBERFLOW_MAX_DIGITS
+    #define LV_NUMBERFLOW_MAX_DIGITS 10
+#endif
 
 /**********************
  *      TYPEDEFS
@@ -44,6 +46,19 @@ enum {
     LV_NUMBERFLOW_DIR_DECREASE          /** force every digit to flow to smaller number and loop if needed*/
 };
 typedef uint8_t lv_numberflow_dir_t;
+
+/**
+ * On/Off features controlling the numberflow's behavior.
+ * Note that you should only set this to a numberflow widget, using lv_numberflow_add_flag
+ * or lv_numberflow_clear_flag. 
+ * OR-ed values are possible
+ */
+enum {
+    LV_NUMBERFLOW_FLAG_TRIM_ZEROS       = (1 << 0),     /**< Trim trailing zeros after decimal point*/
+    LV_NUMBERFLOW_FLAG_FADE_VERTICAL    = (1 << 1),     /**< Change the opacity of the upper and lower numbers during the vertical scrolling of numbers*/
+    LV_NUMBERFLOW_FLAG_TIGHT            = (1 << 2),     /**< Always update the width of widgets to their actual width. Enabling this feature can cause width to become stuck in place when rapidly updating values using non-monospace fonts*/
+};
+typedef uint8_t lv_numberflow_flag_t;
 
 typedef struct {
     int16_t ofs_x;              /**< X offset from origin to image top-left*/
@@ -89,7 +104,7 @@ typedef struct {
 } _lv_nf_number_draw_dsc_t;
 
 typedef struct {
-    uint8_t modulus;            /**< Modulus number of this digit*/
+    uint8_t modulus;            /**< Modulus number of this digit. Store a copy for animation callback*/
 
     int8_t last_num;            /**< Number in the center when the animation ends*/
 
@@ -111,20 +126,20 @@ typedef struct {
     lv_numberflow_dir_t dir;
     lv_anim_path_cb_t anim_path_flow;
     lv_anim_path_cb_t anim_path_size;
-    int8_t integer_fix;           /**< Number of digits before the decimal point. 0 means dynamic length*/
-    int8_t decimal_fix;           /**< Number of digits after the decimal point. 0 means no decimal part*/
-    bool trim_decimal;            /**< Whether to trim trailing zeros after decimal point*/
-    char ksep;                    /**< Thousand separator to use, '\0' means no separator*/
-    char dsep;                    /**< Decimal point to use, can't be '\0'*/
-    bool fade;                    /**< Change the opacity of the upper and lower numbers during the scrolling of numbers*/
+    int8_t int_fix;             /**< Number of digits before the decimal point. 0 means dynamic length*/
+    int8_t dec_fix;             /**< Number of digits after the decimal point. 0 means no decimal part*/
+    char ksep;                  /**< Thousand separator to use, '\0' means no separator*/
+    char dsep;                  /**< Decimal point to use, can't be '\0'*/
+    uint8_t modulus[LV_NUMBERFLOW_MAX_DIGITS * 2]; /**< Stores the modulus for each pos, [0] for least significant digit whose weight is the smallest.*/
+    lv_numberflow_flag_t flags; /**< Flags of numberflow, check ::lv_numberflow_flag_t*/
     const lv_numberflow_blur_data_t *blur_data;
 
-    int32_t value;                  /**< Last value, used for comparison*/
-    int8_t digit_count;             /**< Count of allocated digits*/
-    int8_t int_cnt;                 /**< Count of visible integer digits*/
-    int8_t dec_cnt;                 /**< Count of visible decimal digits*/
-    _lv_nf_digit_t *digits;         /**< Array of digit descriptors*/
-    int8_t ones_place_idx;          /**< Index of the one's place in digits array*/
+    int32_t value;              /**< Last value, used for comparison*/
+    int8_t digit_count;         /**< Count of allocated digits*/
+    int8_t int_cnt;             /**< Count of visible integer digits*/
+    int8_t dec_cnt;             /**< Count of visible decimal digits*/
+    _lv_nf_digit_t *digits;     /**< Array of digit descriptors*/
+    int8_t ones_place_idx;      /**< Index of the one's place in digits array*/
 
     _lv_nf_anim_dsc_t x_ofs;    /**< X offset animation of widget*/
     _lv_nf_anim_dsc_t width;    /**< Width animation of widget*/
@@ -177,6 +192,48 @@ void lv_numberflow_set_mode(lv_obj_t * obj, lv_numberflow_mode_t mode);
  * @param dir       direction from ::lv_numberflow_dir_t
  */
 void lv_numberflow_set_dir(lv_obj_t * obj, lv_numberflow_dir_t dir);
+
+/**
+ * Set the digit format of numberflow
+ * @param obj       pointer to a numberflow object
+ * @param int_fix   minimal count of number of integer part. If 0, will not limit
+ * the minimal length
+ * @param dec_fix   the count of number of decimal part. If 0, decimal point is not
+ * shown
+ */
+void lv_numberflow_set_format(lv_obj_t * obj, uint8_t int_fix, uint8_t dec_fix);
+
+/**
+ * Set the separators of numberflow
+ * @param obj       pointer to a numberflow object
+ * @param ksep      thousand separator. Can be '\0' if not used
+ * @param dsep      decimal separator. Can't be '\0'. Set dec_fix to 0 if you
+ * don't need decimal part
+ */
+void lv_numberflow_set_separators(lv_obj_t * obj, char ksep, char dsep);
+
+/**
+ * Set the modulus of digit
+ * @param obj       pointer to a numberflow object
+ * @param pos       digit position expressed as an exponent of 10 (e.g., 2 for
+ * hundreds, 0 for units, -1 for tenths)
+ * @param modulus   modulus of this digit. Should not exceed 10
+ */
+void lv_numberflow_set_modulus(lv_obj_t * obj, int8_t pos, uint8_t modulus);
+
+/**
+ * Set one or more flags for numberflow
+ * @param obj       pointer to a numberflow object
+ * @param flags     OR-ed values of ::lv_numberflow_flag_t to set
+ */
+void lv_numberflow_add_flag(lv_obj_t * obj, lv_numberflow_flag_t flags);
+
+/**
+ * Clear one or more flags for numberflow
+ * @param obj   pointer to an object
+ * @param flags     OR-ed values from ::lv_numberflow_flag_t to clear.
+ */
+void lv_numberflow_clear_flag(lv_obj_t * obj, lv_numberflow_flag_t flags);
 
 /**
  * Set a new animation path callback for numbers flowing
