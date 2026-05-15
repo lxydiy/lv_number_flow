@@ -256,7 +256,7 @@ void lv_numberflow_set_modulus(lv_obj_t * obj, int8_t pos, uint8_t modulus)
     numberflow->modulus[pos + LV_NUMBERFLOW_MAX_DIGITS] = modulus;
     int8_t idx = expo_pos_to_digit_index(numberflow, pos);
     if (idx >= 0 && idx < numberflow->digit_count) {
-        numberflow->digits[idx].modulus = modulus;
+        numberflow->digits[idx]->modulus = modulus;
     }
 }
 
@@ -387,7 +387,7 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     numberflow->digit_count = 0;
     numberflow->int_cnt = 0;
     numberflow->dec_cnt = 0;
-    numberflow->digits = NULL;
+    lv_memset_00(numberflow->digits, sizeof(numberflow->digits));
     numberflow->ones_place_idx = -1;
 
     numberflow->width.begin = 0;
@@ -413,14 +413,18 @@ static void lv_numberflow_destructor(const lv_obj_class_t * class_p, lv_obj_t * 
     LV_UNUSED(class_p);
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
 
-    if(numberflow->digits != NULL) {
-        for (int32_t i = 0; i < numberflow->digit_count; i++)
-        {
-            lv_anim_del(&numberflow->digits[i], NULL);
-        }
-        lv_anim_del(numberflow, NULL);
-        lv_mem_free(numberflow->digits);
+    for (int32_t i = 0; i < numberflow->digit_count; i++)
+    {
+        lv_anim_del(numberflow->digits[i], NULL);
     }
+    lv_anim_del(numberflow, NULL);
+    for (int8_t i = 0; i < LV_NUMBERFLOW_MAX_DIGITS; i++) {
+        if (numberflow->digits[i] != NULL) {
+            lv_mem_free(numberflow->digits[i]);
+            numberflow->digits[i] = NULL;
+        }
+    }
+    numberflow->digit_count = 0;
 }
 
 /*Simple integer linear interpolator for animation curve*/
@@ -552,26 +556,28 @@ static void draw_numberflow(lv_event_t * e)
 {
     lv_obj_t * obj = lv_event_get_target(e);
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
+    _lv_nf_digit_t * digit;
 
     lv_draw_ctx_t * ctx = lv_event_get_draw_ctx(e);
 
     for (int32_t i = 0; i < numberflow->digit_count; i++)
     {
+        digit = numberflow->digits[i];
         if (digit_has_decimal_sep(numberflow, i)) {
             /*Decimal separator's animation is bound to the first decimal digit*/
             lv_point_t pos_rel;
-            pos_rel.x = numberflow->digits[i].draw[0].x - numberflow->letter_space - get_glyph_width(numberflow, numberflow->dsep);
+            pos_rel.x = digit->draw[0].x - numberflow->letter_space - get_glyph_width(numberflow, numberflow->dsep);
             pos_rel.y = 0;
-            draw_glyph(numberflow, ctx, &pos_rel, numberflow->digits[i].opa.curr, numberflow->dsep);
+            draw_glyph(numberflow, ctx, &pos_rel, digit->opa.curr, numberflow->dsep);
         }
-        draw_number(numberflow, ctx, &numberflow->digits[i].draw[0]);
-        draw_number(numberflow, ctx, &numberflow->digits[i].draw[1]);
+        draw_number(numberflow, ctx, &digit->draw[0]);
+        draw_number(numberflow, ctx, &digit->draw[1]);
         if (digit_has_thousand_sep(numberflow, i)) {
             /*Thousand separator's animation is bound to the integer digit before it*/
             lv_point_t pos_rel;
-            pos_rel.x = numberflow->digits[i].draw[0].x + numberflow->digits[i].draw[0].curr_width + numberflow->letter_space;
+            pos_rel.x = digit->draw[0].x + digit->draw[0].curr_width + numberflow->letter_space;
             pos_rel.y = 0;
-            draw_glyph(numberflow, ctx, &pos_rel, numberflow->digits[i].opa.curr, numberflow->ksep);
+            draw_glyph(numberflow, ctx, &pos_rel, digit->opa.curr, numberflow->ksep);
         }
     }
 }
@@ -698,7 +704,7 @@ static void layout_numberflow(lv_numberflow_t *numberflow)
             x_ofs += get_glyph_width(numberflow, numberflow->dsep);
             x_ofs += numberflow->letter_space;
         }
-        x_ofs += layout_digit(&numberflow->digits[i], x_ofs);
+        x_ofs += layout_digit(numberflow->digits[i], x_ofs);
         x_ofs += numberflow->letter_space;
         if (digit_has_thousand_sep(numberflow, i)) {
             /*Thousand separator's animation is bound to the integer digit before it*/
@@ -908,7 +914,7 @@ static void reset_animations(lv_numberflow_t *numberflow)
 
 static void digit_init(lv_numberflow_t *numberflow, int8_t idx)
 {
-    _lv_nf_digit_t *digit = &numberflow->digits[idx];
+    _lv_nf_digit_t *digit = numberflow->digits[idx];
     lv_memset_00(digit, sizeof(_lv_nf_digit_t));
     digit->modulus = numberflow->modulus[digit_index_to_mod_index(numberflow, idx)];
     digit->anim.updated = true;
@@ -926,43 +932,38 @@ static bool digit_realloc(lv_numberflow_t *numberflow, int8_t front, int8_t back
     }
     if (front == 0 && back == 0) return true;
 
-    lv_anim_t *a[LV_NUMBERFLOW_MAX_DIGITS];
-    lv_memset_00(a, sizeof(a));
-
-    /*Store old animation pointer to change their var later*/
-    for (int8_t i = 0; i < numberflow->digit_count; i++) {
-        a[i] = lv_anim_get(&numberflow->digits[i], anim_digit);
-    }
-
-    numberflow->digits = lv_mem_realloc(numberflow->digits, new_count * sizeof(_lv_nf_digit_t));
-    if (numberflow->digits == NULL) {
-        numberflow->digit_count = 0;
-        return false;
-    }
-
     /*Move old digits to the back*/
-    for (int8_t i = numberflow->digit_count; i > 0; i--) {
-        numberflow->digits[i + front - 1] = numberflow->digits[i - 1];
+    for (int8_t i = numberflow->digit_count - 1; i >= 0; i--) {
+        numberflow->digits[i + front] = numberflow->digits[i];
+        numberflow->digits[i] = NULL;
     }
     numberflow->ones_place_idx += front;
 
     /*Clear allocated digits*/
     for (int8_t i = 0; i < front; i++) {
+        numberflow->digits[i] = lv_mem_alloc(sizeof(_lv_nf_digit_t));
+        if (numberflow->digits[i] == NULL) goto free_all;
         digit_init(numberflow, i);
     }
     for (int8_t i = 0; i < back; i++) {
-        digit_init(numberflow, i + front + numberflow->digit_count);
-    }
-
-    /*Update animation var to new digit*/
-    for (int8_t i = 0; i < numberflow->digit_count; i++) {
-        if (a[i] != NULL) {
-            lv_anim_set_var(a[i], &numberflow->digits[i + front]);
-        }
+        int8_t digit_idx = i + front + numberflow->digit_count;
+        numberflow->digits[digit_idx] = lv_mem_alloc(sizeof(_lv_nf_digit_t));
+        if (numberflow->digits[digit_idx] == NULL) goto free_all;
+        digit_init(numberflow, digit_idx);
     }
 
     numberflow->digit_count = new_count;
     return true;
+
+free_all:
+    for (int8_t i = 0; i < LV_NUMBERFLOW_MAX_DIGITS; i++) {
+        if (numberflow->digits[i] != NULL) {
+            lv_mem_free(numberflow->digits[i]);
+            numberflow->digits[i] = NULL;
+        }
+    }
+    numberflow->digit_count = 0;
+    return false;
 }
 
 static int8_t digit_roll(_lv_nf_digit_t* digit, int8_t target_num, int8_t direction,
@@ -1026,10 +1027,6 @@ static int8_t digit_roll(_lv_nf_digit_t* digit, int8_t target_num, int8_t direct
         digit->slide_start_dsc.target_opa = target_opa;
 
         lv_anim_t a;
-
-        /*This is a workaround to fix multiple animations with same var caused by
-        * update value within 1 tick of lvgl. Change to static digit pointers array to fix it*/
-        lv_anim_del(digit, anim_digit);
 
         lv_anim_init(&a);
         lv_anim_set_exec_cb(&a, anim_digit);
@@ -1148,18 +1145,18 @@ static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t 
 
         if (numberflow->dir == LV_NUMBERFLOW_DIR_CONTINUOUS) {
             if (rolling_dir == 0) {
-                if (num > numberflow->digits[i].last_num) {
+                if (num > numberflow->digits[i]->last_num) {
                     rolling_dir = 1;
                 }
-                else if (num < numberflow->digits[i].last_num) {
+                else if (num < numberflow->digits[i]->last_num) {
                     rolling_dir = -1;
                 }
             }
         }
 
         int8_t delta_num = digit_roll(
-            &numberflow->digits[i],
-            num + rolling_offset * numberflow->digits[i].modulus,
+            numberflow->digits[i],
+            num + rolling_offset * numberflow->digits[i]->modulus,
             rolling_dir,
             opacity,
             numberflow->anim_path_flow,

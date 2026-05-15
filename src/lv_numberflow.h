@@ -138,7 +138,7 @@ typedef struct {
     int8_t digit_count;         /**< Count of allocated digits*/
     int8_t int_cnt;             /**< Count of visible integer digits*/
     int8_t dec_cnt;             /**< Count of visible decimal digits*/
-    _lv_nf_digit_t *digits;     /**< Array of digit descriptors*/
+    _lv_nf_digit_t *digits[LV_NUMBERFLOW_MAX_DIGITS];     /**< Array of digit descriptors*/
     int8_t ones_place_idx;      /**< Index of the one's place in digits array*/
 
     _lv_nf_anim_dsc_t x_ofs;    /**< X offset animation of widget*/
