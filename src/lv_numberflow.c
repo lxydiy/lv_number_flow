@@ -158,15 +158,12 @@ void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t ani
         nums[peer] = t;
     }
 
-    int8_t int_cnt;
-    if (numberflow->int_fix > 0) {
-        int_cnt = numberflow->int_fix;
+    int8_t int_cnt = nums_idx - numberflow->dec_fix;
+    if (int_cnt < 1) {
+        int_cnt = 1;
     }
-    else {
-        int_cnt = nums_idx - numberflow->dec_fix;
-        if (int_cnt < 1) {
-            int_cnt = 1;
-        }
+    if (int_cnt < numberflow->int_fix) {
+        int_cnt = numberflow->int_fix;
     }
 
     int8_t pad = int_cnt + numberflow->dec_fix - nums_idx;
