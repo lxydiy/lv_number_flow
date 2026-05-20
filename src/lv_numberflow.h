@@ -50,13 +50,15 @@ typedef uint8_t lv_numberflow_dir_t;
 /**
  * On/Off features controlling the numberflow's behavior.
  * Note that you should only set this to a numberflow widget, using lv_numberflow_add_flag
- * or lv_numberflow_clear_flag. 
+ * or lv_numberflow_clear_flag.
+ * These are runtime-modifiable flags that preserve current animations when toggled.
  * OR-ed values are possible
  */
 enum {
     LV_NUMBERFLOW_FLAG_TRIM_ZEROS       = (1 << 0),     /**< Trim trailing zeros after decimal point*/
     LV_NUMBERFLOW_FLAG_FADE_VERTICAL    = (1 << 1),     /**< Change the opacity of the upper and lower numbers during the vertical scrolling of numbers*/
     LV_NUMBERFLOW_FLAG_TIGHT            = (1 << 2),     /**< Always update the width of widgets to their actual width. Enabling this feature can cause width to become stuck in place when rapidly updating values using non-monospace fonts*/
+    LV_NUMBERFLOW_FLAG_SHOW_POSITIVE    = (1 << 3),     /**< Show positive symbol ('+') before numbers when number is positive*/
 };
 typedef uint8_t lv_numberflow_flag_t;
 
@@ -141,8 +143,14 @@ typedef struct {
     _lv_nf_digit_t *digits[LV_NUMBERFLOW_MAX_DIGITS];     /**< Array of digit descriptors*/
     int8_t ones_place_idx;      /**< Index of the one's place in digits array*/
 
-    _lv_nf_anim_dsc_t x_ofs;    /**< X offset animation of widget*/
-    _lv_nf_anim_dsc_t width;    /**< Width animation of widget*/
+    _lv_nf_anim_dsc_t x_ofs;    /**< X offset animation of numbers*/
+    _lv_nf_anim_dsc_t width;    /**< Width animation of numbers*/
+
+    char sym_old;               /**< Symbol before numbers when animation starts*/
+    char sym_curr;              /**< Symbol before numbers when animation ends*/
+    _lv_nf_anim_dsc_t sym_opa_old; /**< Opacity animation of old symbol*/
+    _lv_nf_anim_dsc_t sym_opa_curr; /**< Opacity animation of current symbol*/
+    _lv_nf_anim_dsc_t sym_width; /**< Width animation of symbol*/
 
     int32_t anim_state;         /**< Size animation state*/
 

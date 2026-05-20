@@ -52,7 +52,7 @@ static void reset_animations(lv_numberflow_t *numberflow);
 static void recalculate_style(lv_numberflow_t *numberflow);
 static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e);
 static uint16_t get_glyph_width(lv_numberflow_t *numberflow, char glyph);
-static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t int_cnt, int8_t dec_cnt, int8_t trend, lv_anim_enable_t en);
+static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t int_cnt, int8_t dec_cnt, int8_t trend, int8_t symbol, lv_anim_enable_t en);
 
 /**********************
  *  STATIC VARIABLES
@@ -138,6 +138,19 @@ void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t ani
     else {
         trend = 0;
     }
+    numberflow->value = value;
+
+    int8_t symbol;
+    if (value > 0) {
+        symbol = 1;
+    }
+    else if (value < 0) {
+        value = -value;
+        symbol = -1;
+    }
+    else {
+        symbol = 0;
+    }
 
     char nums[LV_NUMBERFLOW_MAX_DIGITS];
     lv_memset_00(nums, sizeof(nums));
@@ -193,8 +206,7 @@ void lv_numberflow_set_value(lv_obj_t * obj, int32_t value, lv_anim_enable_t ani
         }
     }
 
-    lv_numberflow_update_with_anim(obj, nums, int_cnt, dec_cnt, trend, anim);
-    numberflow->value = value;
+    lv_numberflow_update_with_anim(obj, nums, int_cnt, dec_cnt, trend, symbol, anim);
 }
 
 void lv_numberflow_set_mode(lv_obj_t * obj, lv_numberflow_mode_t mode)
@@ -387,13 +399,14 @@ static void lv_numberflow_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     lv_memset_00(numberflow->digits, sizeof(numberflow->digits));
     numberflow->ones_place_idx = -1;
 
-    numberflow->width.begin = 0;
-    numberflow->width.curr = 0;
-    numberflow->width.end = 0;
+    lv_memset_00(&numberflow->x_ofs, sizeof(numberflow->x_ofs));
+    lv_memset_00(&numberflow->width, sizeof(numberflow->width));
+    lv_memset_00(&numberflow->sym_opa_old, sizeof(numberflow->sym_opa_old));
+    lv_memset_00(&numberflow->sym_opa_curr, sizeof(numberflow->sym_opa_curr));
+    lv_memset_00(&numberflow->sym_width, sizeof(numberflow->sym_width));
 
-    numberflow->x_ofs.begin = 0;
-    numberflow->x_ofs.curr = 0;
-    numberflow->x_ofs.end = 0;
+    numberflow->sym_old = '\0';
+    numberflow->sym_curr = '\0';
 
     numberflow->anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
 
@@ -531,6 +544,7 @@ static void draw_number(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx,
 static void draw_glyph(lv_numberflow_t *numberflow, lv_draw_ctx_t *draw_ctx,
                         lv_point_t *pos_rel, lv_opa_t opa, const char glyph)
 {
+    if (glyph == '\0') return;
     lv_obj_t *obj = (lv_obj_t *)numberflow;
     lv_color_t color = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
     lv_draw_label_dsc_t label_dsc;
@@ -556,6 +570,15 @@ static void draw_numberflow(lv_event_t * e)
     _lv_nf_digit_t * digit;
 
     lv_draw_ctx_t * ctx = lv_event_get_draw_ctx(e);
+
+    if (numberflow->sym_width.curr != 0) {
+        /*Symbol's position is always top-left.*/
+        lv_point_t pos_rel;
+        pos_rel.x = 0;
+        pos_rel.y = 0;
+        draw_glyph(numberflow, ctx, &pos_rel, numberflow->sym_opa_old.curr, numberflow->sym_old);
+        draw_glyph(numberflow, ctx, &pos_rel, numberflow->sym_opa_curr.curr, numberflow->sym_curr);
+    }
 
     for (int32_t i = 0; i < numberflow->digit_count; i++)
     {
@@ -693,6 +716,7 @@ static void layout_numberflow(lv_numberflow_t *numberflow)
     int32_t x_ofs = ANIM_LERP(numberflow->anim_state, numberflow->x_ofs);
     numberflow->x_ofs.curr = x_ofs;
 
+    x_ofs += numberflow->sym_width.curr;
     /*We need to count invisible digits's width*/
     for (int32_t i = 0; i < numberflow->digit_count; i++)
     {
@@ -774,8 +798,11 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
     }
     else if(code == LV_EVENT_GET_SELF_SIZE) {
         lv_point_t * p = lv_event_get_param(e);
-        p->x = ANIM_LERP(numberflow->anim_state, numberflow->width);
-        numberflow->width.curr = p->x;
+        numberflow->width.curr = ANIM_LERP(numberflow->anim_state, numberflow->width);
+        numberflow->sym_width.curr = ANIM_LERP(numberflow->anim_state, numberflow->sym_width);
+        numberflow->sym_opa_old.curr = ANIM_LERP(numberflow->anim_state, numberflow->sym_opa_old);
+        numberflow->sym_opa_curr.curr = ANIM_LERP(numberflow->anim_state, numberflow->sym_opa_curr);
+        p->x = numberflow->width.curr + numberflow->sym_width.curr;
         p->y = numberflow->height;
     }
     else if (code == LV_EVENT_STYLE_CHANGED) {
@@ -783,7 +810,9 @@ static void lv_numberflow_event(const lv_obj_class_t * class_p, lv_event_t * e)
     }
     else if(code == LV_EVENT_DRAW_MAIN) {
         layout_numberflow(numberflow);
-        draw_numberflow(e);
+        if (numberflow->digit_count > 0) {
+            draw_numberflow(e);
+        }
     }
 }
 
@@ -1045,7 +1074,7 @@ static int8_t digit_roll(_lv_nf_digit_t* digit, int8_t target_num, int8_t direct
     return target_num - last_num;
 }
 
-static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t int_cnt, int8_t dec_cnt, int8_t trend, lv_anim_enable_t en)
+static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t int_cnt, int8_t dec_cnt, int8_t trend, int8_t symbol, lv_anim_enable_t en)
 {
     lv_numberflow_t * numberflow = (lv_numberflow_t *)obj;
 
@@ -1176,12 +1205,31 @@ static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t 
         }
     }
 
-    /*Size Animation*/
+    /*Symbol handling*/
+    uint16_t symbol_width = 0;
+    numberflow->sym_old = numberflow->sym_curr;
+    numberflow->sym_opa_old = numberflow->sym_opa_curr;
+    if (symbol == -1) {
+        numberflow->sym_curr = '-';
+    }
+    else if (symbol == 1 && numberflow->flags & LV_NUMBERFLOW_FLAG_SHOW_POSITIVE) {
+        numberflow->sym_curr = '+';
+    }
+    else {
+        numberflow->sym_curr = '\0';
+    }
+    symbol_width = get_glyph_width(numberflow, numberflow->sym_curr);
+    if (symbol_width != 0) symbol_width += numberflow->letter_space;
+
+    /*Animations*/
     if(anim_time == 0) {
         numberflow->int_cnt = int_cnt;
         numberflow->dec_cnt = dec_cnt;
         ANIM_UPDATE_STOP(numberflow->width, width);
         ANIM_UPDATE_STOP(numberflow->x_ofs, x_offset_end);
+        ANIM_UPDATE_STOP(numberflow->sym_opa_old, LV_OPA_TRANSP);
+        ANIM_UPDATE_STOP(numberflow->sym_opa_curr, LV_OPA_COVER);
+        ANIM_UPDATE_STOP(numberflow->sym_width, symbol_width);
         lv_anim_del(obj, anim_size);
         numberflow->anim_state = LV_NUMBERFLOW_ANIM_STATE_INV;
         lv_obj_invalidate(obj);
@@ -1203,6 +1251,15 @@ static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t 
             * remains unchanged*/
             numberflow->x_ofs.begin = numberflow->x_ofs.curr + x_offset_start_delta;
             numberflow->x_ofs.end = x_offset_end;
+            ANIM_UPDATE(numberflow->sym_opa_old, LV_OPA_TRANSP);
+            if (numberflow->sym_old != numberflow->sym_curr) {
+                numberflow->sym_opa_curr.begin = LV_OPA_TRANSP;
+                numberflow->sym_opa_curr.end = LV_OPA_COVER;
+            }
+            else {
+                ANIM_UPDATE(numberflow->sym_opa_curr, LV_OPA_COVER);
+            }
+            ANIM_UPDATE(numberflow->sym_width, symbol_width);
             lv_anim_t a;
             lv_anim_init(&a);
             lv_anim_set_var(&a, obj);
