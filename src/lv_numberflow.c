@@ -1242,7 +1242,8 @@ static void lv_numberflow_update_with_anim(lv_obj_t * obj, int8_t *nums, int8_t 
         if (numberflow->flags & LV_NUMBERFLOW_FLAG_TIGHT
              || width > numberflow->width.end
              || int_cnt != numberflow->int_cnt
-             || dec_cnt != numberflow->dec_cnt) {
+             || dec_cnt != numberflow->dec_cnt
+             || numberflow->sym_old != numberflow->sym_curr) {
             numberflow->int_cnt = int_cnt;
             numberflow->dec_cnt = dec_cnt;
             ANIM_UPDATE(numberflow->width, width);
