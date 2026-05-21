@@ -842,6 +842,22 @@ static void anim_digit_start(lv_anim_t * a)
     _lv_nf_slide_start_dsc_t* slide_start_dsc = &digit->slide_start_dsc;
     lv_numberflow_t *numberflow = (lv_numberflow_t *)digit->anim.numberflow;
 
+    if (slide_start_dsc->available == false) {
+        /*A subsequent update to the current digit restores it to the original
+        * animation end state. However, once the animation start callback is invoked,
+        * it means the original animation has already been overridden, so the digit
+        * animation variables must be recalculated to values corresponding to the
+        * new anim_state*/
+        digit->flow.begin = digit->flow.curr;
+        digit->opa.begin = digit->opa.curr;
+        digit->width.begin = digit->width.curr;
+        digit->anim.anim_state = LV_NUMBERFLOW_ANIM_STATE_START;
+        digit->anim.updated = true;
+        lv_obj_invalidate(digit->anim.numberflow);
+        return;
+    }
+    slide_start_dsc->available = false;
+
     lv_coord_t line_height = numberflow->number_height;
     lv_coord_t total_height = line_height * digit->modulus;
 
@@ -1048,11 +1064,13 @@ static int8_t digit_roll(_lv_nf_digit_t* digit, int8_t target_num, int8_t direct
     else {
         if (ofs_y == 0 && target_opa == digit->opa.end) {
             /*target didn't changed so we don't need to animate*/
+            digit->slide_start_dsc.available = false;
             return 0;
         }
         digit->slide_start_dsc.ofs_y = ofs_y;
         digit->slide_start_dsc.target_num = target_num;
         digit->slide_start_dsc.target_opa = target_opa;
+        digit->slide_start_dsc.available = true;
 
         lv_anim_t a;
 

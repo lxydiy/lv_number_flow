@@ -94,6 +94,7 @@ typedef struct {
     lv_coord_t ofs_y;           /**< Pixels to move this digit's Y down*/
     int8_t target_num;          /**< New number of this digit*/
     lv_opa_t target_opa;        /**< New opacity of this digit*/
+    bool available;             /**< True if this slide should be applied*/
 } _lv_nf_slide_start_dsc_t;
 
 typedef struct {
