@@ -958,12 +958,14 @@ static bool digit_realloc(lv_numberflow_t *numberflow, int8_t front, int8_t back
     }
     if (front == 0 && back == 0) return true;
 
-    /*Move old digits to the back*/
-    for (int8_t i = numberflow->digit_count - 1; i >= 0; i--) {
-        numberflow->digits[i + front] = numberflow->digits[i];
-        numberflow->digits[i] = NULL;
+    if (front > 0) {
+        /*Move old digits to the back*/
+        for (int8_t i = numberflow->digit_count - 1; i >= 0; i--) {
+            numberflow->digits[i + front] = numberflow->digits[i];
+            numberflow->digits[i] = NULL; /*Set old digits to NULL to prevent double-free later*/
+        }
+        numberflow->ones_place_idx += front;
     }
-    numberflow->ones_place_idx += front;
 
     /*Clear allocated digits*/
     for (int8_t i = 0; i < front; i++) {
