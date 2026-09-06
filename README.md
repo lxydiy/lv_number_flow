@@ -1,3 +1,5 @@
+https://github.com/user-attachments/assets/eb8de005-301b-4125-80d9-f4ccc63e0d2e
+
 # NumberFlow for LVGL
 
 ## 文档待完善，后续将和“电磁炉”项目一起发布
